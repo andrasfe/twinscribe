@@ -1,0 +1,328 @@
+{
+  "_description": "Mock documentation generation responses from Stream A and Stream B",
+
+  "sample_codebase.utils.helper_function": {
+    "stream_a": {
+      "component_id": "sample_codebase.utils.helper_function",
+      "documentation": {
+        "summary": "Convert any value to its string representation.",
+        "description": "A utility function that converts any Python value to its string representation using the built-in str() function.",
+        "parameters": [
+          {
+            "name": "value",
+            "type": "Any",
+            "description": "Any value to convert to string",
+            "default": null
+          }
+        ],
+        "returns": {
+          "type": "str",
+          "description": "String representation of the value"
+        },
+        "raises": [],
+        "examples": ["helper_function(42)  # Returns '42'"]
+      },
+      "call_graph": {
+        "callers": [
+          {
+            "component_id": "sample_codebase.calculator.Calculator.multiply",
+            "call_site_line": 68,
+            "call_type": "direct"
+          },
+          {
+            "component_id": "sample_codebase.data_processor.DataProcessor._transform",
+            "call_site_line": 142,
+            "call_type": "conditional"
+          }
+        ],
+        "callees": []
+      },
+      "metadata": {
+        "agent_id": "A1",
+        "model": "claude-sonnet-4-5-20250929",
+        "timestamp": "2026-01-06T10:00:00Z",
+        "confidence": 0.95,
+        "processing_order": 1
+      }
+    },
+    "stream_b": {
+      "component_id": "sample_codebase.utils.helper_function",
+      "documentation": {
+        "summary": "Convert value to string format.",
+        "description": "Utility function for string conversion of arbitrary Python objects.",
+        "parameters": [
+          {
+            "name": "value",
+            "type": "Any",
+            "description": "Input value to stringify",
+            "default": null
+          }
+        ],
+        "returns": {
+          "type": "str",
+          "description": "Stringified value"
+        },
+        "raises": [],
+        "examples": ["result = helper_function({'key': 'value'})"]
+      },
+      "call_graph": {
+        "callers": [
+          {
+            "component_id": "sample_codebase.calculator.Calculator.multiply",
+            "call_site_line": 68,
+            "call_type": "direct"
+          }
+        ],
+        "callees": []
+      },
+      "metadata": {
+        "agent_id": "B1",
+        "model": "gpt-4o",
+        "timestamp": "2026-01-06T10:00:01Z",
+        "confidence": 0.92,
+        "processing_order": 1
+      }
+    }
+  },
+
+  "sample_codebase.calculator.Calculator.add": {
+    "stream_a": {
+      "component_id": "sample_codebase.calculator.Calculator.add",
+      "documentation": {
+        "summary": "Add two numbers.",
+        "description": "Performs addition of two floating-point numbers and returns the result rounded to the configured precision.",
+        "parameters": [
+          {
+            "name": "a",
+            "type": "float",
+            "description": "First number to add",
+            "default": null
+          },
+          {
+            "name": "b",
+            "type": "float",
+            "description": "Second number to add",
+            "default": null
+          }
+        ],
+        "returns": {
+          "type": "float",
+          "description": "Sum of a and b, rounded to instance precision"
+        },
+        "raises": [],
+        "examples": ["calc.add(1.5, 2.3)  # Returns 3.8"]
+      },
+      "call_graph": {
+        "callers": [
+          {
+            "component_id": "sample_codebase.calculator.AdvancedCalculator.compute_sum",
+            "call_site_line": 115,
+            "call_type": "loop"
+          },
+          {
+            "component_id": "sample_codebase.calculator.AdvancedCalculator.mean",
+            "call_site_line": 145,
+            "call_type": "direct"
+          }
+        ],
+        "callees": []
+      },
+      "metadata": {
+        "agent_id": "A1",
+        "model": "claude-sonnet-4-5-20250929",
+        "timestamp": "2026-01-06T10:00:02Z",
+        "confidence": 0.98,
+        "processing_order": 2
+      }
+    },
+    "stream_b": {
+      "component_id": "sample_codebase.calculator.Calculator.add",
+      "documentation": {
+        "summary": "Add two numbers together.",
+        "description": "Adds two float values and applies precision rounding based on the calculator's configuration.",
+        "parameters": [
+          {
+            "name": "a",
+            "type": "float",
+            "description": "First operand",
+            "default": null
+          },
+          {
+            "name": "b",
+            "type": "float",
+            "description": "Second operand",
+            "default": null
+          }
+        ],
+        "returns": {
+          "type": "float",
+          "description": "Rounded sum of both values"
+        },
+        "raises": [],
+        "examples": ["calculator.add(10.0, 5.0)"]
+      },
+      "call_graph": {
+        "callers": [
+          {
+            "component_id": "sample_codebase.calculator.AdvancedCalculator.compute_sum",
+            "call_site_line": 115,
+            "call_type": "loop"
+          },
+          {
+            "component_id": "sample_codebase.calculator.AdvancedCalculator.mean",
+            "call_site_line": 145,
+            "call_type": "direct"
+          }
+        ],
+        "callees": []
+      },
+      "metadata": {
+        "agent_id": "B1",
+        "model": "gpt-4o",
+        "timestamp": "2026-01-06T10:00:03Z",
+        "confidence": 0.97,
+        "processing_order": 2
+      }
+    }
+  },
+
+  "sample_codebase.data_processor.DataProcessor.process": {
+    "stream_a": {
+      "component_id": "sample_codebase.data_processor.DataProcessor.process",
+      "documentation": {
+        "summary": "Process input data synchronously.",
+        "description": "Main processing method that validates input, transforms data, caches the result, and notifies registered callbacks. The method follows a pipeline pattern: validate -> transform -> cache -> notify.",
+        "parameters": [
+          {
+            "name": "data",
+            "type": "dict[str, Any]",
+            "description": "Input data dictionary to process",
+            "default": null
+          }
+        ],
+        "returns": {
+          "type": "ProcessingResult",
+          "description": "Processing result containing success status, transformed data, and metrics"
+        },
+        "raises": [
+          {
+            "type": "TypeError",
+            "condition": "If data is not a dictionary"
+          }
+        ],
+        "examples": [
+          "result = processor.process({'name': 'test', 'value': 42})"
+        ]
+      },
+      "call_graph": {
+        "callers": [
+          {
+            "component_id": "sample_codebase.data_processor.DataProcessor.process_async",
+            "call_site_line": 98,
+            "call_type": "direct"
+          }
+        ],
+        "callees": [
+          {
+            "component_id": "sample_codebase.utils.validate_input",
+            "call_site_line": 78,
+            "call_type": "direct"
+          },
+          {
+            "component_id": "sample_codebase.data_processor.DataProcessor._transform",
+            "call_site_line": 86,
+            "call_type": "direct"
+          },
+          {
+            "component_id": "sample_codebase.data_processor.DataProcessor._compute_cache_key",
+            "call_site_line": 95,
+            "call_type": "direct"
+          },
+          {
+            "component_id": "sample_codebase.data_processor.DataProcessor._notify_callbacks",
+            "call_site_line": 98,
+            "call_type": "direct"
+          }
+        ]
+      },
+      "metadata": {
+        "agent_id": "A1",
+        "model": "claude-sonnet-4-5-20250929",
+        "timestamp": "2026-01-06T10:00:04Z",
+        "confidence": 0.94,
+        "processing_order": 5
+      }
+    },
+    "stream_b": {
+      "component_id": "sample_codebase.data_processor.DataProcessor.process",
+      "documentation": {
+        "summary": "Process input data with validation and caching.",
+        "description": "Processes a dictionary input through validation, transformation, and caching stages. Results are stored in an internal cache and callbacks are invoked.",
+        "parameters": [
+          {
+            "name": "data",
+            "type": "dict[str, Any]",
+            "description": "Dictionary containing data to process",
+            "default": null
+          }
+        ],
+        "returns": {
+          "type": "ProcessingResult",
+          "description": "Result object with processing outcome"
+        },
+        "raises": [
+          {
+            "type": "TypeError",
+            "condition": "When data is not a dict"
+          },
+          {
+            "type": "ValueError",
+            "condition": "When data fails validation"
+          }
+        ],
+        "examples": [
+          "proc = DataProcessor()",
+          "result = proc.process({'key': 'value'})"
+        ]
+      },
+      "call_graph": {
+        "callers": [
+          {
+            "component_id": "sample_codebase.data_processor.DataProcessor.process_async",
+            "call_site_line": 98,
+            "call_type": "direct"
+          },
+          {
+            "component_id": "sample_codebase.data_processor.StreamingProcessor.process_stream",
+            "call_site_line": 175,
+            "call_type": "loop"
+          }
+        ],
+        "callees": [
+          {
+            "component_id": "sample_codebase.utils.validate_input",
+            "call_site_line": 78,
+            "call_type": "direct"
+          },
+          {
+            "component_id": "sample_codebase.data_processor.DataProcessor._transform",
+            "call_site_line": 86,
+            "call_type": "direct"
+          },
+          {
+            "component_id": "sample_codebase.data_processor.DataProcessor._notify_callbacks",
+            "call_site_line": 98,
+            "call_type": "direct"
+          }
+        ]
+      },
+      "metadata": {
+        "agent_id": "B1",
+        "model": "gpt-4o",
+        "timestamp": "2026-01-06T10:00:05Z",
+        "confidence": 0.91,
+        "processing_order": 5
+      }
+    }
+  }
+}

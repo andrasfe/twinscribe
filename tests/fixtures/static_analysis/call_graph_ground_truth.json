@@ -1,0 +1,256 @@
+{
+  "_description": "Ground truth call graph for the sample_codebase package",
+  "_note": "This is the authoritative source for call relationships. Updated for new modular structure.",
+
+  "edges": [
+    {
+      "caller": "sample_codebase.main.main",
+      "callee": "sample_codebase.main.load_config",
+      "call_type": "direct",
+      "description": "main entry point loads configuration"
+    },
+    {
+      "caller": "sample_codebase.main.main",
+      "callee": "sample_codebase.core.processor.DataProcessor.__init__",
+      "call_type": "direct",
+      "description": "main initializes processor"
+    },
+    {
+      "caller": "sample_codebase.main.main",
+      "callee": "sample_codebase.core.processor.ProcessingPipeline.__init__",
+      "call_type": "direct",
+      "description": "main creates pipeline"
+    },
+    {
+      "caller": "sample_codebase.main.main",
+      "callee": "sample_codebase.main.process_batch",
+      "call_type": "conditional",
+      "description": "main calls process_batch for sync mode"
+    },
+    {
+      "caller": "sample_codebase.main.main",
+      "callee": "sample_codebase.main.run_async_processing",
+      "call_type": "conditional",
+      "description": "main calls async processing for async mode"
+    },
+    {
+      "caller": "sample_codebase.main.main",
+      "callee": "sample_codebase.utils.formatters.format_output",
+      "call_type": "direct",
+      "description": "main formats final output"
+    },
+    {
+      "caller": "sample_codebase.main.load_config",
+      "callee": "sample_codebase.core.validators.validate_config",
+      "call_type": "direct",
+      "description": "load_config validates configuration"
+    },
+    {
+      "caller": "sample_codebase.main.load_config",
+      "callee": "sample_codebase.utils.helpers.deep_merge",
+      "call_type": "conditional",
+      "description": "load_config merges overrides"
+    },
+    {
+      "caller": "sample_codebase.main.process_batch",
+      "callee": "sample_codebase.core.processor.DataProcessor.process",
+      "call_type": "loop",
+      "description": "process_batch iterates over items"
+    },
+    {
+      "caller": "sample_codebase.main.process_batch",
+      "callee": "sample_codebase.utils.formatters.format_output",
+      "call_type": "conditional",
+      "description": "process_batch formats error messages"
+    },
+    {
+      "caller": "sample_codebase.main.run_async_processing",
+      "callee": "sample_codebase.core.processor.DataProcessor.__init__",
+      "call_type": "direct",
+      "description": "async processing creates processor"
+    },
+    {
+      "caller": "sample_codebase.main.run_async_processing",
+      "callee": "sample_codebase.core.processor.DataProcessor.process",
+      "call_type": "loop",
+      "description": "async processing calls process for each item"
+    },
+    {
+      "caller": "sample_codebase.main.run_with_retry",
+      "callee": "sample_codebase.utils.helpers.retry_operation",
+      "call_type": "direct",
+      "description": "wraps main with retry logic"
+    },
+    {
+      "caller": "sample_codebase.main.run_with_retry",
+      "callee": "sample_codebase.main.main",
+      "call_type": "callback",
+      "description": "retry_operation calls main as callback"
+    },
+    {
+      "caller": "sample_codebase.core.processor.DataProcessor.__init__",
+      "callee": "sample_codebase.core.validators.validate_config",
+      "call_type": "conditional",
+      "description": "processor validates config if provided"
+    },
+    {
+      "caller": "sample_codebase.core.processor.DataProcessor.process",
+      "callee": "sample_codebase.core.validators.validate_input",
+      "call_type": "direct",
+      "description": "processor validates input data"
+    },
+    {
+      "caller": "sample_codebase.core.processor.DataProcessor.process",
+      "callee": "sample_codebase.utils.helpers.normalize_string",
+      "call_type": "conditional",
+      "description": "processor normalizes strings if enabled"
+    },
+    {
+      "caller": "sample_codebase.core.processor.DataProcessor.process",
+      "callee": "sample_codebase.core.processor.ProcessingPipeline.run",
+      "call_type": "conditional",
+      "description": "processor runs pipeline if use_pipeline=True"
+    },
+    {
+      "caller": "sample_codebase.core.processor.DataProcessor.process",
+      "callee": "sample_codebase.core.processor.DataProcessor._process_item",
+      "call_type": "conditional",
+      "description": "processor uses direct processing if use_pipeline=False"
+    },
+    {
+      "caller": "sample_codebase.core.processor.DataProcessor._process_item",
+      "callee": "sample_codebase.utils.formatters.format_output",
+      "call_type": "direct",
+      "description": "_process_item formats result"
+    },
+    {
+      "caller": "sample_codebase.core.processor.DataProcessor._process_item",
+      "callee": "sample_codebase.core.processor.DataProcessor._process_item",
+      "call_type": "recursive",
+      "description": "_process_item recurses for nested dicts"
+    },
+    {
+      "caller": "sample_codebase.core.processor.ProcessingPipeline.run",
+      "callee": "sample_codebase.core.validators.validate_input",
+      "call_type": "direct",
+      "description": "pipeline validates input before processing"
+    },
+    {
+      "caller": "sample_codebase.core.processor.ProcessingPipeline.run",
+      "callee": "sample_codebase.utils.formatters.format_output",
+      "call_type": "direct",
+      "description": "pipeline formats final output"
+    },
+    {
+      "caller": "sample_codebase.core.validators.validate_input",
+      "callee": "sample_codebase.core.validators.validate_range",
+      "call_type": "conditional",
+      "description": "validate_input calls validate_range for numeric fields"
+    },
+    {
+      "caller": "sample_codebase.core.validators.validate_config",
+      "callee": "sample_codebase.core.validators.validate_input",
+      "call_type": "direct",
+      "description": "validate_config uses validate_input internally"
+    },
+    {
+      "caller": "sample_codebase.utils.helpers.flatten_dict",
+      "callee": "sample_codebase.utils.helpers.flatten_dict",
+      "call_type": "recursive",
+      "description": "flatten_dict recurses for nested dicts"
+    },
+    {
+      "caller": "sample_codebase.utils.helpers.deep_merge",
+      "callee": "sample_codebase.utils.helpers.deep_merge",
+      "call_type": "recursive",
+      "description": "deep_merge recurses for nested dicts"
+    },
+    {
+      "caller": "sample_codebase.utils.formatters.format_table",
+      "callee": "sample_codebase.utils.formatters.format_output",
+      "call_type": "loop",
+      "description": "format_table formats complex cell values"
+    },
+    {
+      "caller": "sample_codebase.utils.formatters.format_error",
+      "callee": "sample_codebase.utils.formatters.format_output",
+      "call_type": "conditional",
+      "description": "format_error formats context data"
+    },
+    {
+      "caller": "sample_codebase.models.entities.Entity.from_dict",
+      "callee": "sample_codebase.models.entities.Entity.__init__",
+      "call_type": "direct",
+      "description": "factory method creates instance"
+    },
+    {
+      "caller": "sample_codebase.models.entities.ProcessingResult.map",
+      "callee": "sample_codebase.models.entities.ProcessingResult.__init__",
+      "call_type": "direct",
+      "description": "map creates new ProcessingResult"
+    }
+  ],
+
+  "nodes": [
+    "sample_codebase.main.main",
+    "sample_codebase.main.load_config",
+    "sample_codebase.main.process_batch",
+    "sample_codebase.main.run_async_processing",
+    "sample_codebase.main.run_with_retry",
+    "sample_codebase.core.processor.DataProcessor.__init__",
+    "sample_codebase.core.processor.DataProcessor.process",
+    "sample_codebase.core.processor.DataProcessor._process_item",
+    "sample_codebase.core.processor.DataProcessor.get_stats",
+    "sample_codebase.core.processor.ProcessingPipeline.__init__",
+    "sample_codebase.core.processor.ProcessingPipeline.add_step",
+    "sample_codebase.core.processor.ProcessingPipeline.run",
+    "sample_codebase.core.validators.ValidationError.__init__",
+    "sample_codebase.core.validators.validate_range",
+    "sample_codebase.core.validators.validate_input",
+    "sample_codebase.core.validators.validate_config",
+    "sample_codebase.utils.helpers.normalize_string",
+    "sample_codebase.utils.helpers.flatten_dict",
+    "sample_codebase.utils.helpers.deep_merge",
+    "sample_codebase.utils.helpers.retry_operation",
+    "sample_codebase.utils.helpers.chunk_list",
+    "sample_codebase.utils.formatters.format_output",
+    "sample_codebase.utils.formatters.format_table",
+    "sample_codebase.utils.formatters.format_error",
+    "sample_codebase.utils.formatters.format_duration",
+    "sample_codebase.models.entities.Entity.__init__",
+    "sample_codebase.models.entities.Entity.age_seconds",
+    "sample_codebase.models.entities.Entity.from_dict",
+    "sample_codebase.models.entities.Entity.to_dict",
+    "sample_codebase.models.entities.User.__post_init__",
+    "sample_codebase.models.entities.User.has_role",
+    "sample_codebase.models.entities.User.add_role",
+    "sample_codebase.models.entities.ProcessingResult.is_success",
+    "sample_codebase.models.entities.ProcessingResult.is_failure",
+    "sample_codebase.models.entities.ProcessingResult.unwrap",
+    "sample_codebase.models.entities.ProcessingResult.map"
+  ],
+
+  "metadata": {
+    "package": "sample_codebase",
+    "language": "python",
+    "analyzer": "manual",
+    "timestamp": "2026-01-06T14:00:00Z",
+    "total_nodes": 36,
+    "total_edges": 31,
+    "structure": {
+      "main": 5,
+      "core.processor": 7,
+      "core.validators": 4,
+      "utils.helpers": 5,
+      "utils.formatters": 4,
+      "models.entities": 11
+    },
+    "call_types": {
+      "direct": 17,
+      "conditional": 9,
+      "loop": 4,
+      "recursive": 3,
+      "callback": 1
+    }
+  }
+}

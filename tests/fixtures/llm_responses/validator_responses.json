@@ -1,0 +1,228 @@
+{
+  "_description": "Mock validation responses from Stream A and Stream B validators",
+
+  "sample_codebase.utils.helper_function": {
+    "stream_a": {
+      "component_id": "sample_codebase.utils.helper_function",
+      "validation_result": "pass",
+      "completeness": {
+        "score": 1.0,
+        "missing_elements": [],
+        "extra_elements": []
+      },
+      "call_graph_accuracy": {
+        "score": 1.0,
+        "verified_callees": [],
+        "missing_callees": [],
+        "false_callees": [],
+        "verified_callers": [
+          "sample_codebase.calculator.Calculator.multiply",
+          "sample_codebase.data_processor.DataProcessor._transform"
+        ],
+        "missing_callers": [],
+        "false_callers": []
+      },
+      "corrections_applied": [],
+      "metadata": {
+        "agent_id": "A2",
+        "model": "claude-haiku-4-5-20251001",
+        "static_analyzer": "pycg",
+        "timestamp": "2026-01-06T10:01:00Z"
+      }
+    },
+    "stream_b": {
+      "component_id": "sample_codebase.utils.helper_function",
+      "validation_result": "warning",
+      "completeness": {
+        "score": 0.9,
+        "missing_elements": [],
+        "extra_elements": []
+      },
+      "call_graph_accuracy": {
+        "score": 0.5,
+        "verified_callees": [],
+        "missing_callees": [],
+        "false_callees": [],
+        "verified_callers": [
+          "sample_codebase.calculator.Calculator.multiply"
+        ],
+        "missing_callers": [
+          "sample_codebase.data_processor.DataProcessor._transform"
+        ],
+        "false_callers": []
+      },
+      "corrections_applied": [
+        {
+          "field": "call_graph.callers",
+          "action": "added",
+          "value": {
+            "component_id": "sample_codebase.data_processor.DataProcessor._transform",
+            "call_site_line": 142,
+            "call_type": "conditional"
+          },
+          "reason": "Found in static analysis but missing from documentation"
+        }
+      ],
+      "metadata": {
+        "agent_id": "B2",
+        "model": "gpt-4o-mini",
+        "static_analyzer": "pycg",
+        "timestamp": "2026-01-06T10:01:01Z"
+      }
+    }
+  },
+
+  "sample_codebase.calculator.Calculator.add": {
+    "stream_a": {
+      "component_id": "sample_codebase.calculator.Calculator.add",
+      "validation_result": "pass",
+      "completeness": {
+        "score": 1.0,
+        "missing_elements": [],
+        "extra_elements": []
+      },
+      "call_graph_accuracy": {
+        "score": 1.0,
+        "verified_callees": [],
+        "missing_callees": [],
+        "false_callees": [],
+        "verified_callers": [
+          "sample_codebase.calculator.AdvancedCalculator.compute_sum",
+          "sample_codebase.calculator.AdvancedCalculator.mean"
+        ],
+        "missing_callers": [],
+        "false_callers": []
+      },
+      "corrections_applied": [],
+      "metadata": {
+        "agent_id": "A2",
+        "model": "claude-haiku-4-5-20251001",
+        "static_analyzer": "pycg",
+        "timestamp": "2026-01-06T10:01:02Z"
+      }
+    },
+    "stream_b": {
+      "component_id": "sample_codebase.calculator.Calculator.add",
+      "validation_result": "pass",
+      "completeness": {
+        "score": 1.0,
+        "missing_elements": [],
+        "extra_elements": []
+      },
+      "call_graph_accuracy": {
+        "score": 1.0,
+        "verified_callees": [],
+        "missing_callees": [],
+        "false_callees": [],
+        "verified_callers": [
+          "sample_codebase.calculator.AdvancedCalculator.compute_sum",
+          "sample_codebase.calculator.AdvancedCalculator.mean"
+        ],
+        "missing_callers": [],
+        "false_callers": []
+      },
+      "corrections_applied": [],
+      "metadata": {
+        "agent_id": "B2",
+        "model": "gpt-4o-mini",
+        "static_analyzer": "pycg",
+        "timestamp": "2026-01-06T10:01:03Z"
+      }
+    }
+  },
+
+  "sample_codebase.data_processor.DataProcessor.process": {
+    "stream_a": {
+      "component_id": "sample_codebase.data_processor.DataProcessor.process",
+      "validation_result": "pass",
+      "completeness": {
+        "score": 0.95,
+        "missing_elements": [],
+        "extra_elements": []
+      },
+      "call_graph_accuracy": {
+        "score": 1.0,
+        "verified_callees": [
+          "sample_codebase.utils.validate_input",
+          "sample_codebase.data_processor.DataProcessor._transform",
+          "sample_codebase.data_processor.DataProcessor._compute_cache_key",
+          "sample_codebase.data_processor.DataProcessor._notify_callbacks"
+        ],
+        "missing_callees": [],
+        "false_callees": [],
+        "verified_callers": [
+          "sample_codebase.data_processor.DataProcessor.process_async"
+        ],
+        "missing_callers": [],
+        "false_callers": []
+      },
+      "corrections_applied": [],
+      "metadata": {
+        "agent_id": "A2",
+        "model": "claude-haiku-4-5-20251001",
+        "static_analyzer": "pycg",
+        "timestamp": "2026-01-06T10:01:04Z"
+      }
+    },
+    "stream_b": {
+      "component_id": "sample_codebase.data_processor.DataProcessor.process",
+      "validation_result": "warning",
+      "completeness": {
+        "score": 0.9,
+        "missing_elements": [],
+        "extra_elements": [
+          {
+            "type": "raises",
+            "value": "ValueError",
+            "reason": "ValueError is not directly raised by this method"
+          }
+        ]
+      },
+      "call_graph_accuracy": {
+        "score": 0.75,
+        "verified_callees": [
+          "sample_codebase.utils.validate_input",
+          "sample_codebase.data_processor.DataProcessor._transform",
+          "sample_codebase.data_processor.DataProcessor._notify_callbacks"
+        ],
+        "missing_callees": [
+          "sample_codebase.data_processor.DataProcessor._compute_cache_key"
+        ],
+        "false_callees": [],
+        "verified_callers": [
+          "sample_codebase.data_processor.DataProcessor.process_async",
+          "sample_codebase.data_processor.StreamingProcessor.process_stream"
+        ],
+        "missing_callers": [],
+        "false_callers": []
+      },
+      "corrections_applied": [
+        {
+          "field": "call_graph.callees",
+          "action": "added",
+          "value": {
+            "component_id": "sample_codebase.data_processor.DataProcessor._compute_cache_key",
+            "call_site_line": 95,
+            "call_type": "direct"
+          },
+          "reason": "Found in static analysis"
+        },
+        {
+          "field": "documentation.raises",
+          "action": "removed",
+          "value": {
+            "type": "ValueError",
+            "condition": "When data fails validation"
+          },
+          "reason": "ValueError is raised by validate_input, not by this method directly"
+        }
+      ],
+      "metadata": {
+        "agent_id": "B2",
+        "model": "gpt-4o-mini",
+        "static_analyzer": "pycg",
+        "timestamp": "2026-01-06T10:01:05Z"
+      }
+    }
+  }
+}

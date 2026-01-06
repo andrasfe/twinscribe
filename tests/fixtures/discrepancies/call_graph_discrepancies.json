@@ -1,0 +1,152 @@
+{
+  "_description": "Test scenarios for call graph discrepancies",
+
+  "scenarios": [
+    {
+      "id": "missing_callee_in_stream_b",
+      "description": "Stream B misses a callee that Stream A and ground truth have",
+      "component_id": "module.Class.method",
+      "discrepancy_type": "call_graph_edge",
+      "stream_a": {
+        "callees": [
+          {"component_id": "helper.func", "line": 10, "call_type": "direct"},
+          {"component_id": "utils.parse", "line": 15, "call_type": "direct"}
+        ]
+      },
+      "stream_b": {
+        "callees": [
+          {"component_id": "helper.func", "line": 10, "call_type": "direct"}
+        ]
+      },
+      "ground_truth": {
+        "callees": [
+          {"component_id": "helper.func", "line": 10},
+          {"component_id": "utils.parse", "line": 15}
+        ]
+      },
+      "expected_resolution": "accept_stream_a",
+      "expected_requires_beads": false
+    },
+
+    {
+      "id": "false_callee_in_stream_a",
+      "description": "Stream A has a callee that doesn't exist in ground truth",
+      "component_id": "module.Class.process",
+      "discrepancy_type": "call_graph_edge",
+      "stream_a": {
+        "callees": [
+          {"component_id": "helper.func", "line": 10, "call_type": "direct"},
+          {"component_id": "nonexistent.func", "line": 20, "call_type": "direct"}
+        ]
+      },
+      "stream_b": {
+        "callees": [
+          {"component_id": "helper.func", "line": 10, "call_type": "direct"}
+        ]
+      },
+      "ground_truth": {
+        "callees": [
+          {"component_id": "helper.func", "line": 10}
+        ]
+      },
+      "expected_resolution": "accept_stream_b",
+      "expected_requires_beads": false
+    },
+
+    {
+      "id": "line_number_mismatch",
+      "description": "Both streams have the callee but different line numbers",
+      "component_id": "module.Class.handler",
+      "discrepancy_type": "call_site_line",
+      "stream_a": {
+        "callees": [
+          {"component_id": "helper.func", "line": 45, "call_type": "direct"}
+        ]
+      },
+      "stream_b": {
+        "callees": [
+          {"component_id": "helper.func", "line": 47, "call_type": "direct"}
+        ]
+      },
+      "ground_truth": {
+        "callees": [
+          {"component_id": "helper.func", "line": 45}
+        ]
+      },
+      "expected_resolution": "accept_stream_a",
+      "expected_requires_beads": false
+    },
+
+    {
+      "id": "call_type_difference",
+      "description": "Streams disagree on call type (direct vs conditional)",
+      "component_id": "module.Class.conditional_call",
+      "discrepancy_type": "call_type_mismatch",
+      "stream_a": {
+        "callees": [
+          {"component_id": "helper.func", "line": 30, "call_type": "conditional"}
+        ]
+      },
+      "stream_b": {
+        "callees": [
+          {"component_id": "helper.func", "line": 30, "call_type": "direct"}
+        ]
+      },
+      "ground_truth": {
+        "callees": [
+          {"component_id": "helper.func", "line": 30}
+        ]
+      },
+      "expected_resolution": "needs_human_review",
+      "expected_requires_beads": true,
+      "reason": "Ground truth doesn't include call type; need human to determine"
+    },
+
+    {
+      "id": "missing_caller",
+      "description": "Both streams miss a caller that exists in ground truth",
+      "component_id": "module.shared_util",
+      "discrepancy_type": "call_graph_edge",
+      "stream_a": {
+        "callers": [
+          {"component_id": "module.ClassA.method", "line": 10}
+        ]
+      },
+      "stream_b": {
+        "callers": [
+          {"component_id": "module.ClassA.method", "line": 10}
+        ]
+      },
+      "ground_truth": {
+        "callers": [
+          {"component_id": "module.ClassA.method", "line": 10},
+          {"component_id": "module.ClassB.method", "line": 25}
+        ]
+      },
+      "expected_resolution": "accept_ground_truth",
+      "expected_requires_beads": false,
+      "reason": "Both streams are identical but incomplete; use ground truth"
+    },
+
+    {
+      "id": "dynamic_call_uncertainty",
+      "description": "One stream detects dynamic call, other doesn't",
+      "component_id": "module.dynamic_handler",
+      "discrepancy_type": "call_graph_edge",
+      "stream_a": {
+        "callees": [
+          {"component_id": "unknown", "line": 50, "call_type": "dynamic"}
+        ]
+      },
+      "stream_b": {
+        "callees": []
+      },
+      "ground_truth": {
+        "callees": []
+      },
+      "expected_resolution": "needs_human_review",
+      "expected_requires_beads": true,
+      "reason": "Stream A detected dynamic call that static analysis can't verify"
+    }
+  ]
+}

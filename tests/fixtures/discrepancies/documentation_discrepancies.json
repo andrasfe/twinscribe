@@ -1,0 +1,190 @@
+{
+  "_description": "Test scenarios for documentation content discrepancies",
+
+  "scenarios": [
+    {
+      "id": "summary_wording_difference",
+      "description": "Same meaning but different wording in summary",
+      "component_id": "module.Class.method",
+      "discrepancy_type": "documentation_content",
+      "stream_a": {
+        "documentation": {
+          "summary": "Process input data and return results.",
+          "description": "Handles data processing with validation."
+        }
+      },
+      "stream_b": {
+        "documentation": {
+          "summary": "Handle data processing with result generation.",
+          "description": "Processes input data after validation."
+        }
+      },
+      "expected_resolution": "needs_human_review",
+      "expected_requires_beads": true,
+      "expected_confidence_range": [0.4, 0.7],
+      "reason": "Semantic similarity is high but exact wording differs"
+    },
+
+    {
+      "id": "missing_parameter_description",
+      "description": "One stream has more detailed parameter docs",
+      "component_id": "module.Class.calculate",
+      "discrepancy_type": "parameter_description",
+      "stream_a": {
+        "documentation": {
+          "parameters": [
+            {
+              "name": "value",
+              "type": "float",
+              "description": "The numeric value to process. Must be non-negative."
+            }
+          ]
+        }
+      },
+      "stream_b": {
+        "documentation": {
+          "parameters": [
+            {
+              "name": "value",
+              "type": "float",
+              "description": "Input value"
+            }
+          ]
+        }
+      },
+      "expected_resolution": "accept_stream_a",
+      "expected_requires_beads": false,
+      "expected_confidence_range": [0.8, 1.0],
+      "reason": "Stream A has more complete documentation"
+    },
+
+    {
+      "id": "type_annotation_conflict",
+      "description": "Different type annotations for same parameter",
+      "component_id": "module.Class.transform",
+      "discrepancy_type": "type_annotation",
+      "stream_a": {
+        "documentation": {
+          "parameters": [
+            {"name": "data", "type": "dict[str, Any]"}
+          ],
+          "returns": {"type": "dict[str, Any]"}
+        }
+      },
+      "stream_b": {
+        "documentation": {
+          "parameters": [
+            {"name": "data", "type": "Dict[str, Any]"}
+          ],
+          "returns": {"type": "dict"}
+        }
+      },
+      "expected_resolution": "accept_stream_a",
+      "expected_requires_beads": false,
+      "expected_confidence_range": [0.85, 1.0],
+      "reason": "Stream A uses modern type hints; return type is more specific"
+    },
+
+    {
+      "id": "exception_documentation_conflict",
+      "description": "Different exceptions documented",
+      "component_id": "module.Class.validate",
+      "discrepancy_type": "exception_documentation",
+      "stream_a": {
+        "documentation": {
+          "raises": [
+            {"type": "ValueError", "condition": "If value is negative"},
+            {"type": "TypeError", "condition": "If value is not numeric"}
+          ]
+        }
+      },
+      "stream_b": {
+        "documentation": {
+          "raises": [
+            {"type": "ValueError", "condition": "For invalid input"}
+          ]
+        }
+      },
+      "expected_resolution": "accept_stream_a",
+      "expected_requires_beads": false,
+      "expected_confidence_range": [0.75, 0.95],
+      "reason": "Stream A is more complete; documents both exceptions"
+    },
+
+    {
+      "id": "semantic_content_disagreement",
+      "description": "Streams describe different behavior for same code",
+      "component_id": "module.Class.ambiguous_method",
+      "discrepancy_type": "documentation_content",
+      "stream_a": {
+        "documentation": {
+          "summary": "Synchronously process the request.",
+          "description": "This method processes requests in a blocking manner, waiting for completion before returning."
+        }
+      },
+      "stream_b": {
+        "documentation": {
+          "summary": "Asynchronously handle the request.",
+          "description": "This method initiates request processing and returns immediately, with results available via callback."
+        }
+      },
+      "expected_resolution": "needs_human_review",
+      "expected_requires_beads": true,
+      "expected_confidence_range": [0.1, 0.5],
+      "reason": "Fundamental disagreement about behavior; needs code review"
+    },
+
+    {
+      "id": "missing_return_description",
+      "description": "One stream missing return description entirely",
+      "component_id": "module.Class.get_value",
+      "discrepancy_type": "return_description",
+      "stream_a": {
+        "documentation": {
+          "returns": {
+            "type": "int",
+            "description": "The computed value after applying transformations"
+          }
+        }
+      },
+      "stream_b": {
+        "documentation": {
+          "returns": {
+            "type": "int",
+            "description": ""
+          }
+        }
+      },
+      "expected_resolution": "accept_stream_a",
+      "expected_requires_beads": false,
+      "expected_confidence_range": [0.9, 1.0],
+      "reason": "Stream B has empty description"
+    },
+
+    {
+      "id": "example_code_difference",
+      "description": "Different example code provided",
+      "component_id": "module.Class.example_method",
+      "discrepancy_type": "documentation_content",
+      "stream_a": {
+        "documentation": {
+          "examples": [
+            "result = obj.example_method(42)",
+            "result = obj.example_method(x, y=True)"
+          ]
+        }
+      },
+      "stream_b": {
+        "documentation": {
+          "examples": [
+            "obj.example_method(input_value)"
+          ]
+        }
+      },
+      "expected_resolution": "merge_both",
+      "expected_requires_beads": false,
+      "expected_confidence_range": [0.7, 0.9],
+      "reason": "Both examples are valid; merge for completeness"
+    }
+  ]
+}

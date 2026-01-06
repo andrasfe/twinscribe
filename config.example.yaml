@@ -1,0 +1,176 @@
+# Dual-Stream Documentation System - Configuration
+# Copy this file to config.yaml and customize for your project
+
+# =============================================================================
+# Codebase Configuration
+# =============================================================================
+codebase:
+  # Path to the codebase to document (required)
+  path: /path/to/legacy/codebase
+
+  # Primary programming language
+  language: python  # python, java, javascript, typescript, multi
+
+  # File patterns to exclude from documentation
+  exclude_patterns:
+    - "**/test_*"
+    - "**/tests/**"
+    - "**/__pycache__/**"
+    - "**/venv/**"
+    - "**/.venv/**"
+    - "**/node_modules/**"
+    - "**/*.pyc"
+    - "**/.git/**"
+
+  # Optional: File patterns to include (empty = all matching language)
+  include_patterns: []
+
+  # Optional: Entry point modules for dependency analysis
+  entry_points:
+    - main
+    - app
+
+# =============================================================================
+# Model Configuration
+# =============================================================================
+models:
+  # Stream A configuration (Anthropic-based by default)
+  stream_a:
+    documenter: claude-sonnet-4-5  # Generation tier
+    validator: claude-haiku-4-5    # Validation tier
+
+  # Stream B configuration (OpenAI-based by default)
+  stream_b:
+    documenter: gpt-4o       # Generation tier
+    validator: gpt-4o-mini   # Validation tier
+
+  # Comparator/Arbitrator (premium model)
+  comparator: claude-opus-4-5  # Arbitration tier
+
+  # Custom model definitions (optional)
+  # Use this to add new models or override defaults
+  custom_models:
+    # Example custom model:
+    # my-custom-model:
+    #   name: "my-custom-model-id"
+    #   provider: openrouter
+    #   tier: generation
+    #   cost_per_million_input: 5.0
+    #   cost_per_million_output: 15.0
+    #   max_tokens: 4096
+    #   temperature: 0.0
+    #   context_window: 100000
+
+# =============================================================================
+# Convergence Configuration
+# =============================================================================
+convergence:
+  # Maximum iterations before forced convergence
+  max_iterations: 5
+
+  # Required call graph match rate between streams
+  call_graph_match_threshold: 0.98
+
+  # Required documentation similarity between streams
+  documentation_similarity_threshold: 0.95
+
+  # Maximum unresolved non-blocking discrepancies allowed
+  max_open_discrepancies: 2
+
+  # Timeout waiting for Beads ticket resolution (hours, 0 = don't wait)
+  beads_ticket_timeout_hours: 48
+
+# =============================================================================
+# Beads/Jira Integration
+# =============================================================================
+beads:
+  # Enable/disable Beads integration
+  enabled: true
+
+  # Beads/Jira server URL
+  server: ${JIRA_SERVER:https://your-org.atlassian.net}
+
+  # Project key for discrepancy clarification tickets
+  project: ${JIRA_DOC_PROJECT:LEGACY_DOC}
+
+  # Project key for rebuild story tickets
+  rebuild_project: ${JIRA_REBUILD_PROJECT:REBUILD}
+
+  # Beads username (from environment)
+  username: ${JIRA_USERNAME}
+
+  # Environment variable containing API token
+  api_token_env: JIRA_API_TOKEN
+
+  # Default labels for tickets
+  ticket_labels:
+    - ai-documentation
+    - twinscribe
+
+  # Automatically create tickets for discrepancies
+  auto_create_tickets: true
+
+# =============================================================================
+# Static Analysis Configuration
+# =============================================================================
+static_analysis:
+  # Python analyzers
+  python:
+    primary:
+      enabled: true
+      # executable: /path/to/pycg  # Optional: custom path
+      timeout_seconds: 300
+      extra_args: []
+    fallback:
+      enabled: true
+      timeout_seconds: 300
+
+  # Java analyzers (if language is java)
+  java:
+    primary:
+      enabled: true
+      timeout_seconds: 300
+    fallback:
+      enabled: true
+      timeout_seconds: 600
+
+  # JavaScript/TypeScript analyzers
+  javascript:
+    primary:
+      enabled: true
+      timeout_seconds: 300
+
+  # Multi-language fallback (Sourcetrail)
+  multi_language_fallback:
+    enabled: true
+    timeout_seconds: 600
+
+  # Result caching
+  cache_enabled: true
+  cache_ttl_hours: 24
+
+# =============================================================================
+# Output Configuration
+# =============================================================================
+output:
+  # Base output directory
+  base_dir: ./output
+
+  # Output file names
+  documentation_file: documentation.json
+  call_graph_file: call_graph.json
+  rebuild_tickets_file: rebuild_tickets.json
+  convergence_report_file: convergence_report.json
+  metrics_file: metrics.json
+
+  # Create output directories if they don't exist
+  create_dirs: true
+
+# =============================================================================
+# Runtime Options
+# =============================================================================
+# Enable debug mode (verbose logging)
+debug: false
+
+# Dry run mode (don't make changes, just report what would happen)
+dry_run: false

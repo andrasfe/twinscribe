@@ -1,0 +1,281 @@
+{
+  "_description": "Mock comparison responses from the Comparator agent",
+
+  "cmp_identical_outputs": {
+    "comparison_id": "cmp_identical_20260106_001",
+    "iteration": 1,
+    "summary": {
+      "total_components": 5,
+      "identical": 5,
+      "discrepancies": 0,
+      "resolved_by_ground_truth": 0,
+      "requires_human_review": 0
+    },
+    "discrepancies": [],
+    "convergence_status": {
+      "converged": true,
+      "blocking_discrepancies": 0,
+      "recommendation": "finalize"
+    },
+    "metadata": {
+      "agent_id": "C",
+      "model": "claude-opus-4-5-20251101",
+      "timestamp": "2026-01-06T10:02:00Z",
+      "comparison_duration_ms": 1500
+    }
+  },
+
+  "cmp_call_graph_discrepancy": {
+    "comparison_id": "cmp_callgraph_20260106_002",
+    "iteration": 1,
+    "summary": {
+      "total_components": 10,
+      "identical": 8,
+      "discrepancies": 2,
+      "resolved_by_ground_truth": 2,
+      "requires_human_review": 0
+    },
+    "discrepancies": [
+      {
+        "discrepancy_id": "disc_001",
+        "component_id": "sample_codebase.utils.helper_function",
+        "type": "call_graph_edge",
+        "stream_a_value": {
+          "callers": [
+            {
+              "component_id": "sample_codebase.calculator.Calculator.multiply",
+              "call_site_line": 68,
+              "call_type": "direct"
+            },
+            {
+              "component_id": "sample_codebase.data_processor.DataProcessor._transform",
+              "call_site_line": 142,
+              "call_type": "conditional"
+            }
+          ]
+        },
+        "stream_b_value": {
+          "callers": [
+            {
+              "component_id": "sample_codebase.calculator.Calculator.multiply",
+              "call_site_line": 68,
+              "call_type": "direct"
+            }
+          ]
+        },
+        "ground_truth": {
+          "callers": [
+            {
+              "component_id": "sample_codebase.calculator.Calculator.multiply",
+              "call_site_line": 68
+            },
+            {
+              "component_id": "sample_codebase.data_processor.DataProcessor._transform",
+              "call_site_line": 142
+            }
+          ]
+        },
+        "resolution": "accept_stream_a",
+        "confidence": 0.99,
+        "requires_beads": false,
+        "resolution_reason": "Stream A matches ground truth; Stream B missing caller"
+      },
+      {
+        "discrepancy_id": "disc_002",
+        "component_id": "sample_codebase.data_processor.DataProcessor.process",
+        "type": "call_graph_edge",
+        "stream_a_value": {
+          "callees": [
+            "validate_input",
+            "_transform",
+            "_compute_cache_key",
+            "_notify_callbacks"
+          ]
+        },
+        "stream_b_value": {
+          "callees": [
+            "validate_input",
+            "_transform",
+            "_notify_callbacks"
+          ]
+        },
+        "ground_truth": {
+          "callees": [
+            "validate_input",
+            "_transform",
+            "_compute_cache_key",
+            "_notify_callbacks"
+          ]
+        },
+        "resolution": "accept_stream_a",
+        "confidence": 0.99,
+        "requires_beads": false,
+        "resolution_reason": "Stream A matches ground truth; Stream B missing _compute_cache_key"
+      }
+    ],
+    "convergence_status": {
+      "converged": true,
+      "blocking_discrepancies": 0,
+      "recommendation": "finalize"
+    },
+    "metadata": {
+      "agent_id": "C",
+      "model": "claude-opus-4-5-20251101",
+      "timestamp": "2026-01-06T10:02:01Z",
+      "comparison_duration_ms": 2500
+    }
+  },
+
+  "cmp_documentation_discrepancy": {
+    "comparison_id": "cmp_doc_20260106_003",
+    "iteration": 1,
+    "summary": {
+      "total_components": 10,
+      "identical": 7,
+      "discrepancies": 3,
+      "resolved_by_ground_truth": 1,
+      "requires_human_review": 2
+    },
+    "discrepancies": [
+      {
+        "discrepancy_id": "disc_003",
+        "component_id": "sample_codebase.data_processor.DataProcessor.process",
+        "type": "documentation_content",
+        "stream_a_value": {
+          "summary": "Process input data synchronously.",
+          "description": "Main processing method that validates input, transforms data, caches the result, and notifies registered callbacks."
+        },
+        "stream_b_value": {
+          "summary": "Process input data with validation and caching.",
+          "description": "Processes a dictionary input through validation, transformation, and caching stages."
+        },
+        "ground_truth": null,
+        "resolution": "needs_human_review",
+        "confidence": 0.65,
+        "requires_beads": true,
+        "beads_ticket": {
+          "summary": "[AI-DOC] Documentation content discrepancy: DataProcessor.process",
+          "description": "Stream A and Stream B have different descriptions for this method. Both are technically accurate but emphasize different aspects.",
+          "priority": "Medium"
+        },
+        "resolution_reason": "Both descriptions are valid; human should choose preferred style"
+      },
+      {
+        "discrepancy_id": "disc_004",
+        "component_id": "sample_codebase.data_processor.DataProcessor.process",
+        "type": "exception_documentation",
+        "stream_a_value": {
+          "raises": [
+            {
+              "type": "TypeError",
+              "condition": "If data is not a dictionary"
+            }
+          ]
+        },
+        "stream_b_value": {
+          "raises": [
+            {
+              "type": "TypeError",
+              "condition": "When data is not a dict"
+            },
+            {
+              "type": "ValueError",
+              "condition": "When data fails validation"
+            }
+          ]
+        },
+        "ground_truth": null,
+        "resolution": "needs_human_review",
+        "confidence": 0.55,
+        "requires_beads": true,
+        "beads_ticket": {
+          "summary": "[AI-DOC] Exception documentation discrepancy: DataProcessor.process",
+          "description": "Stream B documents ValueError but it's raised by validate_input, not directly by this method. Need clarification on exception documentation policy.",
+          "priority": "Low"
+        },
+        "resolution_reason": "Policy question: document transitive exceptions or only direct raises?"
+      },
+      {
+        "discrepancy_id": "disc_005",
+        "component_id": "sample_codebase.calculator.Calculator.multiply",
+        "type": "call_graph_edge",
+        "stream_a_value": {
+          "callees": [
+            {
+              "component_id": "sample_codebase.utils.helper_function",
+              "call_site_line": 68
+            }
+          ]
+        },
+        "stream_b_value": {
+          "callees": [
+            {
+              "component_id": "sample_codebase.utils.helper_function",
+              "call_site_line": 70
+            }
+          ]
+        },
+        "ground_truth": {
+          "callees": [
+            {
+              "component_id": "sample_codebase.utils.helper_function",
+              "call_site_line": 68
+            }
+          ]
+        },
+        "resolution": "accept_stream_a",
+        "confidence": 0.99,
+        "requires_beads": false,
+        "resolution_reason": "Stream A line number matches ground truth"
+      }
+    ],
+    "convergence_status": {
+      "converged": false,
+      "blocking_discrepancies": 2,
+      "recommendation": "generate_beads_tickets"
+    },
+    "metadata": {
+      "agent_id": "C",
+      "model": "claude-opus-4-5-20251101",
+      "timestamp": "2026-01-06T10:02:02Z",
+      "comparison_duration_ms": 3500
+    }
+  },
+
+  "cmp_max_iterations": {
+    "comparison_id": "cmp_max_20260106_004",
+    "iteration": 5,
+    "summary": {
+      "total_components": 50,
+      "identical": 48,
+      "discrepancies": 2,
+      "resolved_by_ground_truth": 0,
+      "requires_human_review": 2
+    },
+    "discrepancies": [
+      {
+        "discrepancy_id": "disc_006",
+        "component_id": "complex_module.service.handler",
+        "type": "documentation_content",
+        "stream_a_value": {"summary": "Handle service requests"},
+        "stream_b_value": {"summary": "Process incoming service calls"},
+        "ground_truth": null,
+        "resolution": "deferred",
+        "confidence": 0.50,
+        "requires_beads": true,
+        "resolution_reason": "Max iterations reached; creating ticket for manual resolution"
+      }
+    ],
+    "convergence_status": {
+      "converged": false,
+      "blocking_discrepancies": 2,
+      "recommendation": "force_finalize_with_tickets"
+    },
+    "metadata": {
+      "agent_id": "C",
+      "model": "claude-opus-4-5-20251101",
+      "timestamp": "2026-01-06T10:10:00Z",
+      "comparison_duration_ms": 4000
+    }
+  }
+}

@@ -1,0 +1,230 @@
+{
+  "_description": "Complex test scenarios with multiple discrepancy types",
+
+  "scenarios": [
+    {
+      "id": "complex_component_multiple_issues",
+      "description": "Component with both call graph and documentation discrepancies",
+      "component_id": "service.handler.process_request",
+      "discrepancies": [
+        {
+          "type": "call_graph_edge",
+          "stream_a_value": {
+            "callees": [
+              {"component_id": "service.validator.validate", "line": 25},
+              {"component_id": "service.transformer.transform", "line": 30},
+              {"component_id": "service.cache.get", "line": 35}
+            ]
+          },
+          "stream_b_value": {
+            "callees": [
+              {"component_id": "service.validator.validate", "line": 25},
+              {"component_id": "service.transformer.transform", "line": 30}
+            ]
+          },
+          "ground_truth": {
+            "callees": [
+              {"component_id": "service.validator.validate", "line": 25},
+              {"component_id": "service.transformer.transform", "line": 30},
+              {"component_id": "service.cache.get", "line": 35}
+            ]
+          },
+          "expected_resolution": "accept_stream_a"
+        },
+        {
+          "type": "documentation_content",
+          "stream_a_value": {
+            "summary": "Process incoming request with validation and caching"
+          },
+          "stream_b_value": {
+            "summary": "Handle request processing"
+          },
+          "expected_resolution": "accept_stream_a",
+          "reason": "Stream A mentions caching which matches call graph"
+        },
+        {
+          "type": "exception_documentation",
+          "stream_a_value": {
+            "raises": [
+              {"type": "ValidationError", "condition": "Invalid request"},
+              {"type": "CacheError", "condition": "Cache unavailable"}
+            ]
+          },
+          "stream_b_value": {
+            "raises": [
+              {"type": "ValidationError", "condition": "Invalid request"}
+            ]
+          },
+          "expected_resolution": "accept_stream_a",
+          "reason": "Stream A documents CacheError consistent with cache call"
+        }
+      ],
+      "expected_overall_resolution": "accept_stream_a",
+      "expected_requires_beads": false
+    },
+
+    {
+      "id": "partial_agreement_with_ground_truth_gap",
+      "description": "Streams agree but both miss ground truth information",
+      "component_id": "module.utils.shared_helper",
+      "discrepancies": [
+        {
+          "type": "call_graph_edge",
+          "stream_a_value": {
+            "callers": [
+              {"component_id": "module.service.handler", "line": 50}
+            ]
+          },
+          "stream_b_value": {
+            "callers": [
+              {"component_id": "module.service.handler", "line": 50}
+            ]
+          },
+          "ground_truth": {
+            "callers": [
+              {"component_id": "module.service.handler", "line": 50},
+              {"component_id": "module.batch.processor", "line": 75},
+              {"component_id": "module.api.endpoint", "line": 100}
+            ]
+          },
+          "expected_resolution": "accept_ground_truth",
+          "reason": "Both streams identical but incomplete"
+        }
+      ],
+      "expected_overall_resolution": "accept_ground_truth",
+      "expected_requires_beads": false
+    },
+
+    {
+      "id": "conflicting_semantic_with_matching_call_graph",
+      "description": "Call graphs match but documentation semantics conflict",
+      "component_id": "module.processor.transform",
+      "discrepancies": [
+        {
+          "type": "documentation_content",
+          "stream_a_value": {
+            "summary": "Transform data in-place, modifying the original",
+            "description": "This method modifies the input dictionary directly..."
+          },
+          "stream_b_value": {
+            "summary": "Transform data and return a new copy",
+            "description": "This method creates a copy of the input and applies transformations..."
+          },
+          "expected_resolution": "needs_human_review",
+          "reason": "Fundamental disagreement about mutation behavior"
+        }
+      ],
+      "call_graph_status": "identical",
+      "expected_overall_resolution": "needs_human_review",
+      "expected_requires_beads": true,
+      "beads_priority": "High"
+    },
+
+    {
+      "id": "iteration_progression",
+      "description": "Scenario showing convergence over multiple iterations",
+      "component_id": "module.complex.method",
+      "iterations": [
+        {
+          "iteration": 1,
+          "discrepancy_count": 5,
+          "resolved_by_ground_truth": 3,
+          "requires_human_review": 2
+        },
+        {
+          "iteration": 2,
+          "discrepancy_count": 2,
+          "resolved_by_ground_truth": 0,
+          "requires_human_review": 2,
+          "note": "Remaining discrepancies are documentation-only"
+        },
+        {
+          "iteration": 3,
+          "discrepancy_count": 1,
+          "resolved_by_ground_truth": 0,
+          "requires_human_review": 1,
+          "note": "One Beads ticket resolved; one remains"
+        },
+        {
+          "iteration": 4,
+          "discrepancy_count": 0,
+          "resolved_by_ground_truth": 0,
+          "requires_human_review": 0,
+          "note": "Final Beads ticket resolved; converged"
+        }
+      ],
+      "expected_iterations_to_converge": 4
+    },
+
+    {
+      "id": "max_iterations_reached",
+      "description": "Scenario where convergence is not achieved",
+      "component_id": "module.stubborn.method",
+      "iterations": [
+        {
+          "iteration": 1,
+          "discrepancy_count": 3,
+          "resolved_by_ground_truth": 1,
+          "requires_human_review": 2
+        },
+        {
+          "iteration": 2,
+          "discrepancy_count": 2,
+          "resolved_by_ground_truth": 0,
+          "requires_human_review": 2
+        },
+        {
+          "iteration": 3,
+          "discrepancy_count": 2,
+          "resolved_by_ground_truth": 0,
+          "requires_human_review": 2,
+          "note": "Beads tickets pending"
+        },
+        {
+          "iteration": 4,
+          "discrepancy_count": 2,
+          "resolved_by_ground_truth": 0,
+          "requires_human_review": 2
+        },
+        {
+          "iteration": 5,
+          "discrepancy_count": 2,
+          "resolved_by_ground_truth": 0,
+          "requires_human_review": 2,
+          "note": "Max iterations reached"
+        }
+      ],
+      "expected_final_status": "max_iterations_reached",
+      "expected_action": "force_finalize_with_tickets"
+    },
+
+    {
+      "id": "security_relevant_discrepancy",
+      "description": "Discrepancy in security-relevant documentation",
+      "component_id": "auth.validator.check_permissions",
+      "discrepancies": [
+        {
+          "type": "documentation_content",
+          "stream_a_value": {
+            "summary": "Check if user has required permissions",
+            "description": "Validates user permissions against required roles. Returns True if all required permissions are present.",
+            "raises": [
+              {"type": "PermissionDeniedError", "condition": "User lacks required permissions"}
+            ]
+          },
+          "stream_b_value": {
+            "summary": "Verify user access",
+            "description": "Checks user access level.",
+            "raises": []
+          },
+          "expected_resolution": "needs_human_review",
+          "reason": "Security-relevant; Stream A more complete but needs verification"
+        }
+      ],
+      "expected_overall_resolution": "needs_human_review",
+      "expected_requires_beads": true,
+      "beads_priority": "High",
+      "is_blocking": true
+    }
+  ]
+}

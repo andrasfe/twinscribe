@@ -1,0 +1,571 @@
+"""
+Ticket Template Engine.
+
+Renders ticket content from templates for discrepancy and rebuild tickets.
+"""
+
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from string import Template
+from typing import Any, Optional
+
+from pydantic import BaseModel, Field
+
+
+class TemplateType(str, Enum):
+    """Type of ticket template."""
+
+    DISCREPANCY = "discrepancy"
+    REBUILD = "rebuild"
+
+
+@dataclass
+class DiscrepancyTemplateData:
+    """Data for rendering a discrepancy ticket.
+
+    Attributes:
+        discrepancy_id: Unique discrepancy identifier
+        component_name: Name of the component with discrepancy
+        component_type: Type of component (function, class, etc.)
+        file_path: Path to the file containing the component
+        discrepancy_type: Type of discrepancy (call_graph, documentation, etc.)
+        stream_a_value: Stream A's interpretation
+        stream_b_value: Stream B's interpretation
+        static_analysis_value: Ground truth from static analysis (if available)
+        context: Additional context about the discrepancy
+        iteration: Current iteration number
+        previous_attempts: Summary of previous resolution attempts
+        labels: Labels to apply to the ticket
+        priority: Ticket priority
+    """
+
+    discrepancy_id: str
+    component_name: str
+    component_type: str
+    file_path: str
+    discrepancy_type: str
+    stream_a_value: str
+    stream_b_value: str
+    static_analysis_value: Optional[str] = None
+    context: str = ""
+    iteration: int = 1
+    previous_attempts: list[str] = field(default_factory=list)
+    labels: list[str] = field(default_factory=list)
+    priority: str = "Medium"
+
+
+@dataclass
+class RebuildTemplateData:
+    """Data for rendering a rebuild ticket.
+
+    Attributes:
+        component_name: Name of the component to rebuild
+        component_type: Type of component
+        file_path: Current file path
+        documentation: Final agreed documentation
+        call_graph: Call graph relationships
+        dependencies: Component dependencies
+        dependents: Components that depend on this one
+        complexity_score: Estimated complexity
+        rebuild_priority: Priority in rebuild order
+        suggested_approach: AI-suggested rebuild approach
+        labels: Labels to apply
+        epic_key: Parent epic key (if any)
+    """
+
+    component_name: str
+    component_type: str
+    file_path: str
+    documentation: str
+    call_graph: dict[str, list[str]]  # callers/callees
+    dependencies: list[str] = field(default_factory=list)
+    dependents: list[str] = field(default_factory=list)
+    complexity_score: float = 0.0
+    rebuild_priority: int = 0
+    suggested_approach: str = ""
+    labels: list[str] = field(default_factory=list)
+    epic_key: Optional[str] = None
+
+
+class TicketTemplate(BaseModel):
+    """A ticket template definition.
+
+    Attributes:
+        name: Template name
+        template_type: Type of ticket this template creates
+        summary_template: Template for ticket summary
+        description_template: Template for ticket description
+        default_labels: Default labels to apply
+        default_priority: Default priority
+    """
+
+    name: str
+    template_type: TemplateType
+    summary_template: str
+    description_template: str
+    default_labels: list[str] = Field(default_factory=list)
+    default_priority: str = "Medium"
+
+
+# Default discrepancy ticket template
+DEFAULT_DISCREPANCY_TEMPLATE = TicketTemplate(
+    name="default_discrepancy",
+    template_type=TemplateType.DISCREPANCY,
+    summary_template="[Discrepancy] ${component_name}: ${discrepancy_type}",
+    description_template="""
+h2. Discrepancy Details
+
+*Component:* ${component_name}
+*Type:* ${component_type}
+*File:* {{${file_path}}}
+*Discrepancy Type:* ${discrepancy_type}
+*Iteration:* ${iteration}
+
+h2. Stream Interpretations
+
+h3. Stream A (Anthropic)
+{code}
+${stream_a_value}
+{code}
+
+h3. Stream B (OpenAI)
+{code}
+${stream_b_value}
+{code}
+
+${static_analysis_section}
+
+h2. Context
+${context}
+
+${previous_attempts_section}
+
+h2. Resolution Required
+
+Please review the discrepancy above and provide guidance:
+
+# *Accept Stream A*: Use Stream A's interpretation
+# *Accept Stream B*: Use Stream B's interpretation
+# *Merge*: Provide a merged interpretation combining both
+# *Manual Override*: Provide the correct interpretation
+
+Add a comment with your resolution in the format:
+{{RESOLUTION: <accept_a|accept_b|merge|manual>}}
+<your explanation and/or corrected content>
+""".strip(),
+    default_labels=["ai-documentation", "discrepancy"],
+    default_priority="Medium",
+)
+
+
+# Default rebuild ticket template
+DEFAULT_REBUILD_TEMPLATE = TicketTemplate(
+    name="default_rebuild",
+    template_type=TemplateType.REBUILD,
+    summary_template="[Rebuild] ${component_name} (${component_type})",
+    description_template="""
+h2. Component Information
+
+*Name:* ${component_name}
+*Type:* ${component_type}
+*Current Location:* {{${file_path}}}
+*Rebuild Priority:* ${rebuild_priority}
+*Complexity Score:* ${complexity_score}
+
+h2. Documentation
+
+{code}
+${documentation}
+{code}
+
+h2. Dependencies
+
+h3. This component depends on:
+${dependencies_list}
+
+h3. Components that depend on this:
+${dependents_list}
+
+h2. Call Graph
+
+h3. Calls (outgoing):
+${calls_list}
+
+h3. Called by (incoming):
+${called_by_list}
+
+h2. Suggested Rebuild Approach
+
+${suggested_approach}
+
+h2. Acceptance Criteria
+
+* [ ] Component rebuilt following documentation
+* [ ] All dependencies resolved
+* [ ] Unit tests passing
+* [ ] Integration tests passing
+* [ ] Code review completed
+""".strip(),
+    default_labels=["ai-documentation", "rebuild"],
+    default_priority="Medium",
+)
+
+
+class TicketTemplateEngine:
+    """Renders ticket content from templates.
+
+    Supports:
+    - Variable substitution using ${variable} syntax
+    - Custom templates per ticket type
+    - Default templates for common cases
+
+    Usage:
+        engine = TicketTemplateEngine()
+
+        # Render discrepancy ticket
+        data = DiscrepancyTemplateData(...)
+        summary, description = engine.render_discrepancy(data)
+
+        # Render rebuild ticket
+        rebuild_data = RebuildTemplateData(...)
+        summary, description = engine.render_rebuild(rebuild_data)
+    """
+
+    def __init__(self) -> None:
+        """Initialize the template engine with default templates."""
+        self._templates: dict[str, TicketTemplate] = {
+            "default_discrepancy": DEFAULT_DISCREPANCY_TEMPLATE,
+            "default_rebuild": DEFAULT_REBUILD_TEMPLATE,
+        }
+
+    def register_template(self, template: TicketTemplate) -> None:
+        """Register a custom template.
+
+        Args:
+            template: Template to register
+        """
+        self._templates[template.name] = template
+
+    def get_template(self, name: str) -> Optional[TicketTemplate]:
+        """Get a template by name.
+
+        Args:
+            name: Template name
+
+        Returns:
+            Template or None if not found
+        """
+        return self._templates.get(name)
+
+    def render_discrepancy(
+        self,
+        data: DiscrepancyTemplateData,
+        template_name: str = "default_discrepancy",
+    ) -> tuple[str, str]:
+        """Render a discrepancy ticket.
+
+        Args:
+            data: Template data
+            template_name: Name of template to use
+
+        Returns:
+            Tuple of (summary, description)
+
+        Raises:
+            ValueError: If template not found
+        """
+        template = self._templates.get(template_name)
+        if not template:
+            raise ValueError(f"Template not found: {template_name}")
+
+        if template.template_type != TemplateType.DISCREPANCY:
+            raise ValueError(f"Template {template_name} is not a discrepancy template")
+
+        # Build substitution variables
+        variables = {
+            "discrepancy_id": data.discrepancy_id,
+            "component_name": data.component_name,
+            "component_type": data.component_type,
+            "file_path": data.file_path,
+            "discrepancy_type": data.discrepancy_type,
+            "stream_a_value": data.stream_a_value,
+            "stream_b_value": data.stream_b_value,
+            "context": data.context or "No additional context provided.",
+            "iteration": str(data.iteration),
+        }
+
+        # Build static analysis section
+        if data.static_analysis_value:
+            variables["static_analysis_section"] = f"""
+h3. Static Analysis (Ground Truth)
+{{code}}
+{data.static_analysis_value}
+{{code}}
+""".strip()
+        else:
+            variables["static_analysis_section"] = ""
+
+        # Build previous attempts section
+        if data.previous_attempts:
+            attempts_text = "\n".join(f"* {attempt}" for attempt in data.previous_attempts)
+            variables["previous_attempts_section"] = f"""
+h2. Previous Resolution Attempts
+{attempts_text}
+""".strip()
+        else:
+            variables["previous_attempts_section"] = ""
+
+        # Render templates
+        summary = Template(template.summary_template).safe_substitute(variables)
+        description = Template(template.description_template).safe_substitute(variables)
+
+        return summary, description
+
+    def render_rebuild(
+        self,
+        data: RebuildTemplateData,
+        template_name: str = "default_rebuild",
+    ) -> tuple[str, str]:
+        """Render a rebuild ticket.
+
+        Args:
+            data: Template data
+            template_name: Name of template to use
+
+        Returns:
+            Tuple of (summary, description)
+
+        Raises:
+            ValueError: If template not found
+        """
+        template = self._templates.get(template_name)
+        if not template:
+            raise ValueError(f"Template not found: {template_name}")
+
+        if template.template_type != TemplateType.REBUILD:
+            raise ValueError(f"Template {template_name} is not a rebuild template")
+
+        # Build substitution variables
+        variables = {
+            "component_name": data.component_name,
+            "component_type": data.component_type,
+            "file_path": data.file_path,
+            "documentation": data.documentation,
+            "rebuild_priority": str(data.rebuild_priority),
+            "complexity_score": f"{data.complexity_score:.2f}",
+            "suggested_approach": data.suggested_approach or "No specific approach suggested.",
+        }
+
+        # Build dependencies list
+        if data.dependencies:
+            variables["dependencies_list"] = "\n".join(f"* {dep}" for dep in data.dependencies)
+        else:
+            variables["dependencies_list"] = "* None"
+
+        # Build dependents list
+        if data.dependents:
+            variables["dependents_list"] = "\n".join(f"* {dep}" for dep in data.dependents)
+        else:
+            variables["dependents_list"] = "* None"
+
+        # Build call graph lists
+        calls = data.call_graph.get("calls", [])
+        called_by = data.call_graph.get("called_by", [])
+
+        if calls:
+            variables["calls_list"] = "\n".join(f"* {call}" for call in calls)
+        else:
+            variables["calls_list"] = "* None"
+
+        if called_by:
+            variables["called_by_list"] = "\n".join(f"* {caller}" for caller in called_by)
+        else:
+            variables["called_by_list"] = "* None"
+
+        # Render templates
+        summary = Template(template.summary_template).safe_substitute(variables)
+        description = Template(template.description_template).safe_substitute(variables)
+
+        return summary, description
+
+    def get_labels(
+        self,
+        data: DiscrepancyTemplateData | RebuildTemplateData,
+        template_name: str,
+    ) -> list[str]:
+        """Get labels for a ticket.
+
+        Combines template defaults with data-specific labels.
+
+        Args:
+            data: Template data
+            template_name: Template name
+
+        Returns:
+            Combined list of labels
+        """
+        template = self._templates.get(template_name)
+        labels = list(template.default_labels) if template else []
+
+        # Add data-specific labels
+        labels.extend(data.labels)
+
+        # Deduplicate while preserving order
+        seen = set()
+        unique_labels = []
+        for label in labels:
+            if label not in seen:
+                seen.add(label)
+                unique_labels.append(label)
+
+        return unique_labels
+
+    def get_priority(
+        self,
+        data: DiscrepancyTemplateData | RebuildTemplateData,
+        template_name: str,
+    ) -> str:
+        """Get priority for a ticket.
+
+        Uses data priority if specified, otherwise template default.
+
+        Args:
+            data: Template data
+            template_name: Template name
+
+        Returns:
+            Priority string
+        """
+        # Check if data has priority attribute
+        if hasattr(data, "priority") and data.priority:
+            return data.priority
+
+        template = self._templates.get(template_name)
+        return template.default_priority if template else "Medium"
+
+
+class ResolutionParser:
+    """Parses human resolutions from ticket comments.
+
+    Extracts resolution action and content from structured comments.
+
+    Expected format:
+        RESOLUTION: <action>
+        <content>
+
+    Where action is one of: accept_a, accept_b, merge, manual
+    """
+
+    RESOLUTION_PATTERN = r"RESOLUTION:\s*(accept_a|accept_b|merge|manual)\s*\n?(.*)"
+
+    def __init__(self) -> None:
+        """Initialize the parser."""
+        import re
+        self._pattern = re.compile(self.RESOLUTION_PATTERN, re.IGNORECASE | re.DOTALL)
+
+    def parse(self, comment_text: str) -> Optional[tuple[str, str]]:
+        """Parse a resolution from comment text.
+
+        Args:
+            comment_text: Raw comment text
+
+        Returns:
+            Tuple of (action, content) or None if not a resolution
+        """
+        match = self._pattern.search(comment_text)
+        if not match:
+            return None
+
+        action = match.group(1).lower()
+        content = match.group(2).strip() if match.group(2) else ""
+
+        return action, content
+
+    def is_resolution_comment(self, comment_text: str) -> bool:
+        """Check if comment contains a resolution.
+
+        Args:
+            comment_text: Raw comment text
+
+        Returns:
+            True if comment contains resolution
+        """
+        return self._pattern.search(comment_text) is not None
+
+    def extract_action(self, comment_text: str) -> Optional[str]:
+        """Extract just the action from a resolution comment.
+
+        Args:
+            comment_text: Raw comment text
+
+        Returns:
+            Action string or None
+        """
+        result = self.parse(comment_text)
+        return result[0] if result else None
+
+    def extract_content(self, comment_text: str) -> Optional[str]:
+        """Extract just the content from a resolution comment.
+
+        Args:
+            comment_text: Raw comment text
+
+        Returns:
+            Content string or None
+        """
+        result = self.parse(comment_text)
+        return result[1] if result else None
+
+
+def format_jira_code_block(content: str, language: str = "") -> str:
+    """Format content as a Jira code block.
+
+    Args:
+        content: Content to format
+        language: Optional language for syntax highlighting
+
+    Returns:
+        Jira-formatted code block
+    """
+    if language:
+        return f"{{code:{language}}}\n{content}\n{{code}}"
+    return f"{{code}}\n{content}\n{{code}}"
+
+
+def format_jira_panel(
+    content: str,
+    title: str = "",
+    panel_type: str = "info",
+) -> str:
+    """Format content as a Jira panel.
+
+    Args:
+        content: Panel content
+        title: Optional panel title
+        panel_type: Panel type (info, warning, error, note)
+
+    Returns:
+        Jira-formatted panel
+    """
+    if title:
+        return f"{{panel:title={title}|type={panel_type}}}\n{content}\n{{panel}}"
+    return f"{{panel:type={panel_type}}}\n{content}\n{{panel}}"
+
+
+def format_jira_table(
+    headers: list[str],
+    rows: list[list[str]],
+) -> str:
+    """Format data as a Jira table.
+
+    Args:
+        headers: Table headers
+        rows: Table rows
+
+    Returns:
+        Jira-formatted table
+    """
+    header_row = "||" + "||".join(headers) + "||"
+    data_rows = ["|" + "|".join(row) + "|" for row in rows]
+    return header_row + "\n" + "\n".join(data_rows)

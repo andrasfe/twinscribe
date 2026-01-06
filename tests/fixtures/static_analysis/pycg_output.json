@@ -1,0 +1,120 @@
+{
+  "_description": "Mock PyCG output for the sample_codebase package",
+  "_format": "PyCG JSON format: { caller: [list of callees] }",
+
+  "sample_codebase.utils.helper_function": [],
+
+  "sample_codebase.utils.validate_input": [],
+
+  "sample_codebase.utils.format_output": [
+    "sample_codebase.utils.helper_function"
+  ],
+
+  "sample_codebase.utils.safe_divide": [],
+
+  "sample_codebase.calculator.Calculator.__init__": [],
+
+  "sample_codebase.calculator.Calculator.add": [],
+
+  "sample_codebase.calculator.Calculator.subtract": [],
+
+  "sample_codebase.calculator.Calculator.multiply": [
+    "sample_codebase.utils.helper_function"
+  ],
+
+  "sample_codebase.calculator.Calculator.divide": [
+    "sample_codebase.utils.safe_divide"
+  ],
+
+  "sample_codebase.calculator.AdvancedCalculator.power": [],
+
+  "sample_codebase.calculator.AdvancedCalculator.compute_sum": [
+    "sample_codebase.calculator.Calculator.add"
+  ],
+
+  "sample_codebase.calculator.AdvancedCalculator.compute_product": [
+    "sample_codebase.calculator.Calculator.multiply"
+  ],
+
+  "sample_codebase.calculator.AdvancedCalculator.mean": [
+    "sample_codebase.calculator.AdvancedCalculator.compute_sum",
+    "sample_codebase.calculator.Calculator.divide"
+  ],
+
+  "sample_codebase.calculator.AdvancedCalculator.format_result": [
+    "sample_codebase.utils.format_output"
+  ],
+
+  "sample_codebase.calculator.ScientificCalculator.__init__": [
+    "sample_codebase.calculator.AdvancedCalculator.__init__"
+  ],
+
+  "sample_codebase.calculator.ScientificCalculator.square_root": [
+    "sample_codebase.calculator.AdvancedCalculator.power"
+  ],
+
+  "sample_codebase.calculator.ScientificCalculator.factorial": [
+    "sample_codebase.calculator.Calculator.multiply"
+  ],
+
+  "sample_codebase.data_processor.ProcessingResult.is_valid": [],
+
+  "sample_codebase.data_processor.ProcessingResult.to_dict": [],
+
+  "sample_codebase.data_processor.DataProcessor.__init__": [],
+
+  "sample_codebase.data_processor.DataProcessor.cache_size": [],
+
+  "sample_codebase.data_processor.DataProcessor.register_callback": [],
+
+  "sample_codebase.data_processor.DataProcessor._notify_callbacks": [],
+
+  "sample_codebase.data_processor.DataProcessor.process": [
+    "sample_codebase.utils.validate_input",
+    "sample_codebase.data_processor.DataProcessor._transform",
+    "sample_codebase.data_processor.DataProcessor._compute_cache_key",
+    "sample_codebase.data_processor.DataProcessor._notify_callbacks"
+  ],
+
+  "sample_codebase.data_processor.DataProcessor.process_async": [
+    "sample_codebase.data_processor.DataProcessor.process"
+  ],
+
+  "sample_codebase.data_processor.DataProcessor.process_batch": [
+    "sample_codebase.data_processor.DataProcessor.process_async"
+  ],
+
+  "sample_codebase.data_processor.DataProcessor._transform": [
+    "sample_codebase.utils.helper_function"
+  ],
+
+  "sample_codebase.data_processor.DataProcessor._compute_cache_key": [
+    "sample_codebase.utils.helper_function"
+  ],
+
+  "sample_codebase.data_processor.DataProcessor.create_default": [
+    "sample_codebase.data_processor.DataProcessor.__init__"
+  ],
+
+  "sample_codebase.data_processor.DataProcessor.create_strict": [
+    "sample_codebase.data_processor.DataProcessor.__init__"
+  ],
+
+  "sample_codebase.data_processor.DataProcessor.clear_cache": [],
+
+  "sample_codebase.data_processor.DataProcessor.get_cached": [
+    "sample_codebase.data_processor.DataProcessor._compute_cache_key"
+  ],
+
+  "sample_codebase.data_processor.StreamingProcessor.__init__": [
+    "sample_codebase.data_processor.DataProcessor.__init__"
+  ],
+
+  "sample_codebase.data_processor.StreamingProcessor.process_stream": [
+    "sample_codebase.data_processor.DataProcessor.process"
+  ],
+
+  "sample_codebase.data_processor.StreamingProcessor.process_chunks": [
+    "sample_codebase.data_processor.DataProcessor.process"
+  ]
+}
