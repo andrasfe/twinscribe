@@ -50,7 +50,21 @@ TwinScribe is a multi-agent system for generating accurate code documentation wi
 
 - Python 3.11 or higher
 - OpenRouter API key (for LLM access)
-- Jira/Beads instance (for issue tracking integration)
+- Beads CLI (for issue tracking)
+
+### Installing Beads
+
+```bash
+# Using the provided install script
+./scripts/install-beads.sh
+
+# Or manually via npm/Homebrew/Go:
+npm install -g beads-cli
+# or: brew install steveyegge/tap/beads
+# or: go install github.com/steveyegge/beads/cmd/bd@latest
+```
+
+See https://github.com/steveyegge/beads for more details.
 
 ## Installation
 
@@ -89,10 +103,8 @@ cp .env.example .env
 # Required: OpenRouter API key
 OPENROUTER_API_KEY=your_openrouter_api_key_here
 
-# Required for issue tracking integration
-JIRA_SERVER=https://your-org.atlassian.net
-JIRA_USERNAME=automation@your-org.com
-JIRA_API_TOKEN=your_jira_api_token_here
+# Initialize Beads for issue tracking (run in project root)
+# bd init
 ```
 
 3. (Optional) Create a `config.yaml` for advanced configuration:

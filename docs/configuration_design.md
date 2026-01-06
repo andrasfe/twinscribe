@@ -64,10 +64,10 @@ OPENROUTER_API_KEY=your_openrouter_api_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
 OPENAI_API_KEY=your_openai_api_key
 
-# Beads integration
-JIRA_SERVER=https://your-org.atlassian.net
-JIRA_API_TOKEN=your_token
-JIRA_USERNAME=your_email@company.com
+# Beads integration (git-backed issue tracker)
+# Run 'bd init' in the project root to initialize
+BEADS_DIR=.beads
+BEADS_AUTO_CREATE=true
 ```
 
 ### config.yaml File
@@ -97,8 +97,7 @@ convergence:
 
 beads:
   enabled: true
-  server: ${JIRA_SERVER}
-  username: ${JIRA_USERNAME}
+  directory: ${BEADS_DIR:.beads}
 
 output:
   base_dir: ./output
@@ -185,13 +184,11 @@ class ConvergenceConfig(BaseModel):
 ```python
 class BeadsConfig(BaseModel):
     enabled: bool = True
-    server: str = ""
-    project: str = "LEGACY_DOC"
-    rebuild_project: str = "REBUILD"
-    username: str = ""
-    api_token_env: str = "JIRA_API_TOKEN"
-    ticket_labels: list[str] = ["ai-documentation"]
-    auto_create_tickets: bool = True
+    directory: str = ".beads"
+    labels: list[str] = ["ai-documentation", "twinscribe"]
+    auto_create_issues: bool = True
+    discrepancy_priority: int = 1
+    rebuild_priority: int = 0
 ```
 
 ### StaticAnalysisConfig
@@ -231,10 +228,10 @@ The configuration loader supports environment variable substitution:
 
 ```yaml
 # Basic substitution
-server: ${JIRA_SERVER}
+directory: ${BEADS_DIR}
 
 # With default value
-project: ${JIRA_PROJECT:LEGACY_DOC}
+directory: ${BEADS_DIR:.beads}
 ```
 
 Pattern: `${VAR_NAME}` or `${VAR_NAME:default}`

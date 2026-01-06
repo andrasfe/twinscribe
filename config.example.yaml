@@ -81,34 +81,30 @@ convergence:
   beads_ticket_timeout_hours: 48
 
 # =============================================================================
-# Beads/Jira Integration
+# Beads Integration (Git-Backed Issue Tracking)
 # =============================================================================
+# Beads is a distributed issue tracker designed for AI agents.
+# See https://github.com/steveyegge/beads for setup.
 beads:
   # Enable/disable Beads integration
   enabled: true
 
-  # Beads/Jira server URL
-  server: ${JIRA_SERVER:https://your-org.atlassian.net}
+  # Beads directory (relative to repo root)
+  directory: ${BEADS_DIR:.beads}
 
-  # Project key for discrepancy clarification tickets
-  project: ${JIRA_DOC_PROJECT:LEGACY_DOC}
-
-  # Project key for rebuild story tickets
-  rebuild_project: ${JIRA_REBUILD_PROJECT:REBUILD}
-
-  # Beads username (from environment)
-  username: ${JIRA_USERNAME}
-
-  # Environment variable containing API token
-  api_token_env: JIRA_API_TOKEN
-
-  # Default labels for tickets
-  ticket_labels:
+  # Default labels for created issues
+  labels:
     - ai-documentation
     - twinscribe
 
-  # Automatically create tickets for discrepancies
-  auto_create_tickets: true
+  # Automatically create issues for discrepancies
+  auto_create_issues: ${BEADS_AUTO_CREATE:true}
+
+  # Priority for discrepancy issues (0=highest, higher=lower priority)
+  discrepancy_priority: 1
+
+  # Priority for rebuild story issues
+  rebuild_priority: 0
 
 # =============================================================================
 # Static Analysis Configuration

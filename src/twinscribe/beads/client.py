@@ -1,124 +1,90 @@
 """
-Beads API Client.
+Beads CLI Client.
 
-Low-level client for interacting with Beads/Jira REST API.
+Wrapper for interacting with Beads via the bd CLI.
+See https://github.com/steveyegge/beads for Beads documentation.
 """
 
-from abc import ABC, abstractmethod
+import asyncio
+import json
+import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field
 
 
 class BeadsClientConfig(BaseModel):
-    """Configuration for Beads API client.
+    """Configuration for Beads client.
 
     Attributes:
-        server: Beads/Jira server URL
-        username: Username for authentication
-        api_token: API token (from SecretStr)
-        timeout_seconds: Request timeout
+        directory: Beads directory (relative to repo root)
+        labels: Default labels for created issues
+        timeout_seconds: CLI command timeout
         max_retries: Maximum retry attempts
-        verify_ssl: Whether to verify SSL certificates
     """
 
-    server: str = Field(
-        ...,
-        description="Beads server URL",
-        examples=["https://your-org.atlassian.net"],
+    directory: str = Field(
+        default=".beads",
+        description="Beads directory",
     )
-    username: str = Field(
-        ...,
-        description="Username for authentication",
-    )
-    api_token: SecretStr = Field(
-        ...,
-        description="API token",
+    labels: list[str] = Field(
+        default_factory=lambda: ["ai-documentation", "twinscribe"],
+        description="Default labels for issues",
     )
     timeout_seconds: int = Field(
         default=30,
         ge=1,
-        description="Request timeout",
+        description="CLI command timeout",
     )
     max_retries: int = Field(
         default=3,
         ge=0,
         description="Max retries",
     )
-    verify_ssl: bool = Field(
-        default=True,
-        description="Verify SSL certificates",
-    )
 
 
 @dataclass
 class BeadsIssue:
-    """Representation of a Beads/Jira issue.
+    """Representation of a Beads issue.
 
     Attributes:
-        key: Issue key (e.g., LEGACY-123)
-        id: Numeric issue ID
-        summary: Issue summary/title
+        id: Issue ID (e.g., bd-a1b2)
+        title: Issue title/summary
         description: Issue description
-        status: Current status name
-        priority: Priority name
-        issue_type: Issue type name
+        status: Current status
+        priority: Priority (0=highest)
         labels: List of labels
         created: Creation timestamp
         updated: Last update timestamp
-        resolution: Resolution name if resolved
-        assignee: Assignee username
-        reporter: Reporter username
-        comments: List of comments
-        custom_fields: Custom field values
+        parent_id: Parent issue ID (for subtasks)
+        dependencies: List of blocking issue IDs
+        metadata: Additional metadata
     """
 
-    key: str
     id: str
-    summary: str
-    description: str
-    status: str
-    priority: str
-    issue_type: str
+    title: str
+    description: str = ""
+    status: str = "open"
+    priority: int = 1
     labels: list[str] = field(default_factory=list)
     created: Optional[datetime] = None
     updated: Optional[datetime] = None
-    resolution: Optional[str] = None
-    assignee: Optional[str] = None
-    reporter: Optional[str] = None
-    comments: list["BeadsComment"] = field(default_factory=list)
-    custom_fields: dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def is_resolved(self) -> bool:
-        """Check if issue is resolved."""
-        return self.resolution is not None
+    parent_id: Optional[str] = None
+    dependencies: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def is_open(self) -> bool:
         """Check if issue is open."""
-        return self.status.lower() in ("open", "to do", "new", "in progress")
+        return self.status.lower() in ("open", "in_progress", "pending")
 
-
-@dataclass
-class BeadsComment:
-    """Representation of a Beads/Jira comment.
-
-    Attributes:
-        id: Comment ID
-        author: Comment author
-        body: Comment body text
-        created: Creation timestamp
-        updated: Last update timestamp
-    """
-
-    id: str
-    author: str
-    body: str
-    created: Optional[datetime] = None
-    updated: Optional[datetime] = None
+    @property
+    def is_closed(self) -> bool:
+        """Check if issue is closed."""
+        return self.status.lower() in ("closed", "done", "resolved")
 
 
 @dataclass
@@ -126,41 +92,37 @@ class CreateIssueRequest:
     """Request to create a new issue.
 
     Attributes:
-        project: Project key
-        issue_type: Issue type name
-        summary: Issue summary
+        title: Issue title
         description: Issue description
-        priority: Priority name
+        priority: Priority (0=highest)
         labels: Labels to add
-        assignee: Assignee username
-        custom_fields: Custom field values
+        parent_id: Parent issue ID (for subtasks)
+        dependencies: Blocking issue IDs
     """
 
-    project: str
-    issue_type: str
-    summary: str
-    description: str
-    priority: str = "Medium"
+    title: str
+    description: str = ""
+    priority: int = 1
     labels: list[str] = field(default_factory=list)
-    assignee: Optional[str] = None
-    custom_fields: dict[str, Any] = field(default_factory=dict)
+    parent_id: Optional[str] = None
+    dependencies: list[str] = field(default_factory=list)
 
 
-class BeadsClient(ABC):
-    """Abstract base class for Beads/Jira API client.
+class BeadsClient:
+    """Client for interacting with Beads via CLI.
 
-    Provides async interface for common Beads operations.
-    Implementations can use jira-python, atlassian-python-api, or direct REST.
+    Wraps the bd CLI commands for async Python usage.
     """
 
-    def __init__(self, config: BeadsClientConfig) -> None:
+    def __init__(self, config: Optional[BeadsClientConfig] = None) -> None:
         """Initialize the client.
 
         Args:
-            config: Client configuration
+            config: Client configuration (uses defaults if None)
         """
-        self._config = config
+        self._config = config or BeadsClientConfig()
         self._initialized = False
+        self._bd_path: Optional[str] = None
 
     @property
     def config(self) -> BeadsClientConfig:
@@ -172,22 +134,78 @@ class BeadsClient(ABC):
         """Check if client is initialized."""
         return self._initialized
 
-    @abstractmethod
     async def initialize(self) -> None:
-        """Initialize the client and verify connection.
+        """Initialize the client and verify bd is available.
 
         Raises:
-            ConnectionError: If cannot connect to server
-            AuthenticationError: If credentials invalid
+            BeadsError: If bd CLI not found or not initialized
         """
-        pass
+        # Check if bd is available
+        self._bd_path = shutil.which("bd")
+        if not self._bd_path:
+            raise BeadsError(
+                "Beads CLI (bd) not found. Install via: ./scripts/install-beads.sh"
+            )
 
-    @abstractmethod
+        # Check if beads is initialized in the repo
+        beads_dir = Path(self._config.directory)
+        if not beads_dir.exists():
+            # Try to initialize
+            await self._run_command(["init"])
+
+        self._initialized = True
+
     async def close(self) -> None:
-        """Close the client and release resources."""
-        pass
+        """Close the client (sync with git if needed)."""
+        if self._initialized:
+            try:
+                await self.sync()
+            except BeadsError:
+                pass  # Ignore sync errors on close
 
-    @abstractmethod
+    async def _run_command(
+        self,
+        args: list[str],
+        capture_output: bool = True,
+    ) -> str:
+        """Run a bd CLI command.
+
+        Args:
+            args: Command arguments (without 'bd' prefix)
+            capture_output: Whether to capture and return output
+
+        Returns:
+            Command output if capture_output=True
+
+        Raises:
+            BeadsError: If command fails
+        """
+        cmd = [self._bd_path or "bd"] + args
+
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE if capture_output else None,
+                stderr=asyncio.subprocess.PIPE if capture_output else None,
+            )
+
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=self._config.timeout_seconds,
+            )
+
+            if process.returncode != 0:
+                error_msg = stderr.decode() if stderr else "Unknown error"
+                raise BeadsError(
+                    f"bd command failed: {' '.join(args)}\n{error_msg}",
+                    exit_code=process.returncode,
+                )
+
+            return stdout.decode() if stdout else ""
+
+        except asyncio.TimeoutError as e:
+            raise BeadsError(f"bd command timed out: {' '.join(args)}") from e
+
     async def create_issue(self, request: CreateIssueRequest) -> BeadsIssue:
         """Create a new issue.
 
@@ -200,14 +218,35 @@ class BeadsClient(ABC):
         Raises:
             BeadsError: If creation fails
         """
-        pass
+        args = ["create", request.title, "-p", str(request.priority)]
 
-    @abstractmethod
-    async def get_issue(self, key: str) -> BeadsIssue:
-        """Get an issue by key.
+        # Add labels
+        for label in request.labels or self._config.labels:
+            args.extend(["-l", label])
+
+        output = await self._run_command(args)
+
+        # Parse the created issue ID from output
+        # Expected format: "Created issue bd-xxxx"
+        issue_id = self._parse_issue_id(output)
+
+        # If description provided, update the issue
+        if request.description:
+            # bd doesn't have direct description support in create,
+            # so we add it as a comment or metadata
+            pass
+
+        # Add dependencies if specified
+        for dep_id in request.dependencies:
+            await self._run_command(["dep", "add", issue_id, dep_id])
+
+        return await self.get_issue(issue_id)
+
+    async def get_issue(self, issue_id: str) -> BeadsIssue:
+        """Get issue details.
 
         Args:
-            key: Issue key (e.g., LEGACY-123)
+            issue_id: Issue ID (e.g., bd-a1b2)
 
         Returns:
             Issue details
@@ -215,19 +254,42 @@ class BeadsClient(ABC):
         Raises:
             NotFoundError: If issue doesn't exist
         """
-        pass
+        try:
+            output = await self._run_command(["show", issue_id, "--json"])
+            data = json.loads(output)
 
-    @abstractmethod
+            return BeadsIssue(
+                id=data.get("id", issue_id),
+                title=data.get("title", ""),
+                description=data.get("description", ""),
+                status=data.get("status", "open"),
+                priority=data.get("priority", 1),
+                labels=data.get("labels", []),
+                created=self._parse_datetime(data.get("created")),
+                updated=self._parse_datetime(data.get("updated")),
+                parent_id=data.get("parent_id"),
+                dependencies=data.get("dependencies", []),
+                metadata=data.get("metadata", {}),
+            )
+        except BeadsError as e:
+            if "not found" in str(e).lower():
+                raise NotFoundError(f"Issue not found: {issue_id}") from e
+            raise
+
     async def update_issue(
         self,
-        key: str,
-        fields: dict[str, Any],
+        issue_id: str,
+        status: Optional[str] = None,
+        priority: Optional[int] = None,
+        **kwargs: Any,
     ) -> BeadsIssue:
         """Update an issue.
 
         Args:
-            key: Issue key
-            fields: Fields to update
+            issue_id: Issue ID
+            status: New status
+            priority: New priority
+            **kwargs: Additional fields to update
 
         Returns:
             Updated issue
@@ -235,91 +297,102 @@ class BeadsClient(ABC):
         Raises:
             NotFoundError: If issue doesn't exist
         """
-        pass
+        args = ["update", issue_id]
 
-    @abstractmethod
-    async def add_comment(self, key: str, body: str) -> BeadsComment:
-        """Add a comment to an issue.
+        if status:
+            args.extend(["--status", status])
 
-        Args:
-            key: Issue key
-            body: Comment body
+        if priority is not None:
+            args.extend(["-p", str(priority)])
 
-        Returns:
-            Created comment
-        """
-        pass
+        await self._run_command(args)
+        return await self.get_issue(issue_id)
 
-    @abstractmethod
-    async def get_comments(self, key: str) -> list[BeadsComment]:
-        """Get all comments for an issue.
+    async def close_issue(self, issue_id: str) -> BeadsIssue:
+        """Close an issue.
 
         Args:
-            key: Issue key
+            issue_id: Issue ID
 
         Returns:
-            List of comments
+            Closed issue
         """
-        pass
+        await self._run_command(["close", issue_id])
+        return await self.get_issue(issue_id)
 
-    @abstractmethod
-    async def transition_issue(
-        self,
-        key: str,
-        transition_name: str,
-        resolution: Optional[str] = None,
-    ) -> BeadsIssue:
-        """Transition an issue to a new status.
+    async def list_ready(self) -> list[BeadsIssue]:
+        """List issues with no blocking dependencies.
+
+        Returns:
+            List of ready issues
+        """
+        output = await self._run_command(["ready", "--json"])
+        try:
+            data = json.loads(output)
+            return [
+                BeadsIssue(
+                    id=item.get("id", ""),
+                    title=item.get("title", ""),
+                    status=item.get("status", "open"),
+                    priority=item.get("priority", 1),
+                    labels=item.get("labels", []),
+                )
+                for item in data
+            ]
+        except json.JSONDecodeError:
+            return []
+
+    async def sync(self) -> None:
+        """Sync with git."""
+        await self._run_command(["sync"])
+
+    async def add_dependency(self, issue_id: str, depends_on: str) -> None:
+        """Add a dependency relationship.
 
         Args:
-            key: Issue key
-            transition_name: Name of transition to execute
-            resolution: Resolution to set (for closing transitions)
-
-        Returns:
-            Updated issue
+            issue_id: Issue that depends on another
+            depends_on: Issue being depended on
         """
-        pass
+        await self._run_command(["dep", "add", issue_id, depends_on])
 
-    @abstractmethod
-    async def search_issues(
-        self,
-        jql: str,
-        max_results: int = 50,
-        fields: Optional[list[str]] = None,
-    ) -> list[BeadsIssue]:
-        """Search issues using JQL.
+    def _parse_issue_id(self, output: str) -> str:
+        """Parse issue ID from command output.
 
         Args:
-            jql: JQL query string
-            max_results: Maximum results to return
-            fields: Fields to include (None = all)
+            output: Command output
 
         Returns:
-            List of matching issues
+            Issue ID
         """
-        pass
+        # Look for pattern like "bd-xxxx" in output
+        import re
 
-    async def get_open_issues_by_label(
-        self,
-        project: str,
-        label: str,
-    ) -> list[BeadsIssue]:
-        """Get open issues with a specific label.
+        match = re.search(r"(bd-[a-z0-9]+)", output, re.IGNORECASE)
+        if match:
+            return match.group(1)
+
+        # Fallback: return first word that looks like an ID
+        for word in output.split():
+            if word.startswith("bd-"):
+                return word
+
+        raise BeadsError(f"Could not parse issue ID from output: {output}")
+
+    def _parse_datetime(self, value: Optional[str]) -> Optional[datetime]:
+        """Parse datetime from string.
 
         Args:
-            project: Project key
-            label: Label to filter by
+            value: ISO format datetime string
 
         Returns:
-            List of open issues with the label
+            Parsed datetime or None
         """
-        jql = (
-            f'project = "{project}" AND '
-            f'labels = "{label}" AND '
-            f'status NOT IN (Done, Resolved, Closed)'
-        )
-        return await self.search_issues(jql)
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
 
 
 class BeadsError(Exception):
@@ -328,27 +401,13 @@ class BeadsError(Exception):
     def __init__(
         self,
         message: str,
-        status_code: Optional[int] = None,
-        response_body: Optional[str] = None,
+        exit_code: Optional[int] = None,
     ) -> None:
         super().__init__(message)
-        self.status_code = status_code
-        self.response_body = response_body
-
-
-class AuthenticationError(BeadsError):
-    """Raised when authentication fails."""
-
-    pass
+        self.exit_code = exit_code
 
 
 class NotFoundError(BeadsError):
-    """Raised when a resource is not found."""
-
-    pass
-
-
-class PermissionError(BeadsError):
-    """Raised when permission is denied."""
+    """Raised when an issue is not found."""
 
     pass

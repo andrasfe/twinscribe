@@ -2,7 +2,9 @@
 
 ## Overview
 
-The Beads integration module provides human-in-the-loop resolution for edge cases that cannot be automatically resolved through ground truth validation or model consensus. It integrates with Jira/Beads issue tracking systems to create, monitor, and apply resolutions from human reviewers.
+The Beads integration module provides human-in-the-loop resolution for edge cases that cannot be automatically resolved through ground truth validation or model consensus. It integrates with Beads, a git-backed issue tracker designed for AI agents, to create, monitor, and apply resolutions from human reviewers.
+
+Beads stores issues as JSONL files in a `.beads/` directory, using git as the underlying database. This allows tasks to be versioned, branched, and merged alongside code.
 
 ## Architecture
 
@@ -13,8 +15,8 @@ The Beads integration module provides human-in-the-loop resolution for edge case
 |  +-------------------------------------------------------------+  |
 |  |                 BeadsLifecycleManager                       |  |
 |  |                                                             |  |
-|  |  - Creates discrepancy tickets                              |  |
-|  |  - Creates rebuild tickets                                  |  |
+|  |  - Creates discrepancy issues                               |  |
+|  |  - Creates rebuild issues                                   |  |
 |  |  - Monitors for resolutions                                 |  |
 |  |  - Applies resolutions                                      |  |
 |  |  - Handles timeouts                                         |  |
@@ -22,16 +24,16 @@ The Beads integration module provides human-in-the-loop resolution for edge case
 |           |              |                |                       |
 |           v              v                v                       |
 |  +--------------+  +--------------+  +--------------+             |
-|  | BeadsClient  |  |TicketTracker |  |TemplateEngine|             |
+|  | BeadsClient  |  |IssueTracker  |  |TemplateEngine|             |
 |  |              |  |              |  |              |             |
-|  | - API calls  |  | - Track state|  | - Render     |             |
-|  | - Auth       |  | - Query      |  |   content    |             |
-|  | - CRUD ops   |  | - Serialize  |  | - Parse      |             |
+|  | - bd CLI     |  | - Track state|  | - Render     |             |
+|  | - JSONL ops  |  | - Query      |  |   content    |             |
+|  | - Git sync   |  | - Serialize  |  | - Parse      |             |
 |  +--------------+  +--------------+  +--------------+             |
 |           |                                                       |
 |           v                                                       |
 |  +-------------------------------------------------------------+  |
-|  |                  Jira/Beads REST API                        |  |
+|  |              .beads/ directory (JSONL files)                |  |
 |  +-------------------------------------------------------------+  |
 +-------------------------------------------------------------------+
 ```
@@ -41,9 +43,9 @@ The Beads integration module provides human-in-the-loop resolution for edge case
 ```
 src/twinscribe/beads/
 +-- __init__.py        # Public exports
-+-- client.py          # Low-level API client
-+-- tracker.py         # Ticket tracking and state
-+-- templates.py       # Ticket content rendering
++-- client.py          # Beads CLI wrapper
++-- tracker.py         # Issue tracking and state
++-- templates.py       # Issue content rendering
 +-- manager.py         # Lifecycle coordination
 ```
 
@@ -51,60 +53,74 @@ src/twinscribe/beads/
 
 ### BeadsClient (client.py)
 
-Abstract base class for interacting with the Beads/Jira REST API.
+Wrapper for interacting with the Beads CLI (`bd`).
 
 ```python
-class BeadsClient(ABC):
-    """Abstract base class for Beads/Jira API client."""
+class BeadsClient:
+    """Client for interacting with Beads via CLI."""
 
-    async def initialize() -> None
-    async def close() -> None
-    async def create_issue(request: CreateIssueRequest) -> BeadsIssue
-    async def get_issue(key: str) -> BeadsIssue
-    async def update_issue(key: str, fields: dict) -> BeadsIssue
-    async def add_comment(key: str, body: str) -> BeadsComment
-    async def get_comments(key: str) -> list[BeadsComment]
-    async def transition_issue(key: str, transition_name: str) -> BeadsIssue
-    async def search_issues(jql: str) -> list[BeadsIssue]
+    def __init__(self, beads_dir: str = ".beads"):
+        """Initialize with path to Beads directory."""
+
+    async def initialize(self) -> None:
+        """Initialize Beads in the repository if needed."""
+
+    async def create_issue(self, request: CreateIssueRequest) -> BeadsIssue:
+        """Create a new issue using bd create."""
+
+    async def get_issue(self, issue_id: str) -> BeadsIssue:
+        """Get issue details using bd show."""
+
+    async def update_issue(self, issue_id: str, **kwargs) -> BeadsIssue:
+        """Update issue status/fields using bd update."""
+
+    async def add_comment(self, issue_id: str, body: str) -> None:
+        """Add a comment to an issue."""
+
+    async def list_ready(self) -> list[BeadsIssue]:
+        """List issues ready for work (no blocking deps)."""
+
+    async def close_issue(self, issue_id: str) -> BeadsIssue:
+        """Close an issue using bd close."""
+
+    async def sync(self) -> None:
+        """Sync with git using bd sync."""
 ```
 
 #### Data Classes
 
 | Class | Purpose |
 |-------|---------|
-| `BeadsClientConfig` | API configuration (server, auth, timeouts) |
-| `BeadsIssue` | Issue representation with key, summary, status, etc. |
-| `BeadsComment` | Comment representation with author, body, timestamps |
+| `BeadsClientConfig` | Configuration (directory, labels, priorities) |
+| `BeadsIssue` | Issue representation with id, title, status, etc. |
 | `CreateIssueRequest` | Request object for issue creation |
 
-#### Exception Hierarchy
+#### Issue IDs
 
-```
-BeadsError
-+-- AuthenticationError    # Invalid credentials
-+-- NotFoundError          # Issue/resource not found
-+-- PermissionError        # Access denied
-```
+Beads uses hash-based IDs (e.g., `bd-a1b2`) to prevent merge conflicts. Issues can also have hierarchical structure:
+- Epic: `bd-a3f8`
+- Task: `bd-a3f8.1`
+- Subtask: `bd-a3f8.1.1`
 
-### TicketTracker (tracker.py)
+### IssueTracker (tracker.py)
 
-Tracks Beads tickets and maps them to discrepancies and components.
+Tracks Beads issues and maps them to discrepancies and components.
 
 ```python
-class TicketTracker:
-    """Tracks Beads tickets and their resolution status."""
+class IssueTracker:
+    """Tracks Beads issues and their resolution status."""
 
-    def track(ticket_key, ticket_type, ...) -> TrackedTicket
-    def get(ticket_key: str) -> Optional[TrackedTicket]
-    def get_by_discrepancy(discrepancy_id: str) -> Optional[TrackedTicket]
-    def get_by_component(component_id: str) -> list[TrackedTicket]
-    def query(query: TicketQuery) -> list[TrackedTicket]
-    def update_resolution(ticket_key, text, action) -> TrackedTicket
-    def mark_applied(ticket_key: str) -> TrackedTicket
-    def expire_ticket(ticket_key: str) -> TrackedTicket
+    def track(issue_id, issue_type, ...) -> TrackedIssue
+    def get(issue_id: str) -> Optional[TrackedIssue]
+    def get_by_discrepancy(discrepancy_id: str) -> Optional[TrackedIssue]
+    def get_by_component(component_id: str) -> list[TrackedIssue]
+    def query(query: IssueQuery) -> list[TrackedIssue]
+    def update_resolution(issue_id, text, action) -> TrackedIssue
+    def mark_applied(issue_id: str) -> TrackedIssue
+    def expire_issue(issue_id: str) -> TrackedIssue
 ```
 
-#### Ticket States
+#### Issue States
 
 ```
                     +----------+
@@ -131,21 +147,21 @@ class TicketTracker:
 
 | State | Description |
 |-------|-------------|
-| `PENDING` | Ticket created, awaiting human review |
+| `PENDING` | Issue created, awaiting human review |
 | `IN_PROGRESS` | Human is actively working on resolution |
 | `RESOLVED` | Human provided resolution, not yet applied |
 | `APPLIED` | Resolution applied to documentation |
 | `EXPIRED` | Timeout reached without resolution |
-| `CANCELLED` | Ticket was cancelled |
+| `CANCELLED` | Issue was cancelled |
 
-#### TrackedTicket
+#### TrackedIssue
 
 ```python
 @dataclass
-class TrackedTicket:
-    ticket_key: str                # e.g., "LEGACY-123"
-    ticket_type: TicketType        # DISCREPANCY or REBUILD
-    status: TicketStatus
+class TrackedIssue:
+    issue_id: str                  # e.g., "bd-a1b2"
+    issue_type: IssueType          # DISCREPANCY or REBUILD
+    status: IssueStatus
     discrepancy_id: Optional[str]  # Links to Discrepancy model
     component_id: Optional[str]    # Links to Component model
     created_at: datetime
@@ -156,19 +172,19 @@ class TrackedTicket:
     metadata: dict[str, Any]
 ```
 
-### TicketTemplateEngine (templates.py)
+### IssueTemplateEngine (templates.py)
 
-Renders ticket content from templates using variable substitution.
+Renders issue content from templates.
 
 ```python
-class TicketTemplateEngine:
-    """Renders ticket content from templates."""
+class IssueTemplateEngine:
+    """Renders issue content from templates."""
 
     def render_discrepancy(data, template_name) -> tuple[str, str]
     def render_rebuild(data, template_name) -> tuple[str, str]
-    def register_template(template: TicketTemplate) -> None
+    def register_template(template: IssueTemplate) -> None
     def get_labels(data, template_name) -> list[str]
-    def get_priority(data, template_name) -> str
+    def get_priority(data, template_name) -> int
 ```
 
 #### Template Data Classes
@@ -189,7 +205,7 @@ class DiscrepancyTemplateData:
     iteration: int
     previous_attempts: list[str]
     labels: list[str]
-    priority: str
+    priority: int
 ```
 
 **RebuildTemplateData**
@@ -207,21 +223,14 @@ class RebuildTemplateData:
     rebuild_priority: int
     suggested_approach: str
     labels: list[str]
-    epic_key: Optional[str]
+    parent_id: Optional[str]  # For epic/subtask hierarchy
 ```
-
-#### Default Templates
-
-The module provides default Jira-formatted templates for both ticket types:
-
-1. **Discrepancy Template**: Shows both stream interpretations, static analysis value if available, context, and instructions for resolution
-2. **Rebuild Template**: Shows component documentation, dependencies, call graph, and acceptance criteria
 
 #### Resolution Parsing
 
 ```python
 class ResolutionParser:
-    """Parses human resolutions from ticket comments."""
+    """Parses human resolutions from issue comments."""
 
     def parse(comment_text: str) -> Optional[tuple[str, str]]
     def is_resolution_comment(comment_text: str) -> bool
@@ -235,23 +244,23 @@ RESOLUTION: <accept_a|accept_b|merge|manual>
 
 ### BeadsLifecycleManager (manager.py)
 
-Coordinates the full lifecycle of Beads tickets.
+Coordinates the full lifecycle of Beads issues.
 
 ```python
 class BeadsLifecycleManager:
-    """Manages the lifecycle of Beads tickets."""
+    """Manages the lifecycle of Beads issues."""
 
     async def initialize() -> None
     async def close() -> None
 
-    # Ticket Creation
-    async def create_discrepancy_ticket(data) -> TrackedTicket
-    async def create_rebuild_ticket(data) -> TrackedTicket
+    # Issue Creation
+    async def create_discrepancy_issue(data) -> TrackedIssue
+    async def create_rebuild_issue(data) -> TrackedIssue
     async def create_rebuild_epic(name, components) -> str
 
     # Resolution Monitoring
-    async def check_for_resolution(ticket_key) -> Optional[TicketResolution]
-    async def wait_for_resolution(ticket_key, timeout) -> Optional[TicketResolution]
+    async def check_for_resolution(issue_id) -> Optional[IssueResolution]
+    async def wait_for_resolution(issue_id, timeout) -> Optional[IssueResolution]
     async def start_monitoring() -> None
     async def stop_monitoring() -> None
 
@@ -259,7 +268,7 @@ class BeadsLifecycleManager:
     async def apply_resolution(resolution, apply_func) -> ResolutionResult
 
     # State Management
-    async def sync_from_beads(jql: str) -> int
+    async def sync_from_beads() -> int
     def get_statistics() -> dict
 ```
 
@@ -267,53 +276,53 @@ class BeadsLifecycleManager:
 
 ```python
 class ManagerConfig(BaseModel):
-    project: str = "LEGACY_DOC"          # Discrepancy project
-    rebuild_project: str = "REBUILD"      # Rebuild project
+    directory: str = ".beads"             # Beads directory
     poll_interval_seconds: int = 60       # Resolution poll interval
-    timeout_hours: int = 48               # Ticket timeout
-    auto_create_tickets: bool = True
-    default_labels: list[str] = ["ai-documentation"]
-    max_concurrent_polls: int = 10
+    timeout_hours: int = 48               # Issue timeout
+    auto_create_issues: bool = True
+    default_labels: list[str] = ["ai-documentation", "twinscribe"]
+    discrepancy_priority: int = 1         # 0=highest
+    rebuild_priority: int = 0
 ```
 
 ## Data Flow
 
-### Discrepancy Ticket Flow
+### Discrepancy Issue Flow
 
 ```
-Comparison Result      DiscrepancyTemplateData       CreateIssueRequest
-(discrepancy) -------> (render template) ----------> (Beads API) ----+
-                                                                     |
-                                                                     v
-                                                              BeadsIssue
-                                                                     |
-                                                                     v
-      TrackedTicket <------------------------------------------+
+Comparison Result      DiscrepancyTemplateData       bd create
+(discrepancy) -------> (render template) ----------> (CLI) -------+
+                                                                   |
+                                                                   v
+                                                             BeadsIssue
+                                                                   |
+                                                                   v
+      TrackedIssue <-----------------------------------------------+
            |
-           | (monitoring loop)
+           | (monitoring loop via bd show)
            v
-      Check Comments ----> Parse Resolution ----> TicketResolution
-                                                        |
-                                                        v
-                                                Apply to Documentation
-                                                        |
-                                                        v
-                                                  Mark APPLIED
+      Check Status ----> Parse Resolution ----> IssueResolution
+                                                      |
+                                                      v
+                                              Apply to Documentation
+                                                      |
+                                                      v
+                                                Mark APPLIED (bd close)
 ```
 
-### Rebuild Ticket Flow
+### Rebuild Issue Flow
 
 ```
-Final Documentation     RebuildTemplateData         CreateIssueRequest
-(component docs) -----> (render template) --------> (Beads API) ----+
-                                                                     |
-                                                                     v
-                                                              BeadsIssue
-                                                                     |
-                                                                     v
-      TrackedTicket <------------------------------------------+
+Final Documentation     RebuildTemplateData           bd create
+(component docs) -----> (render template) --------> (CLI) -------+
+                                                                   |
+                                                                   v
+                                                             BeadsIssue
+                                                                   |
+                                                                   v
+      TrackedIssue <-----------------------------------------------+
            |
-           | (optional: link to epic)
+           | (optional: link to epic via dep add)
            v
       Ready for Manual Rebuild
 ```
@@ -322,15 +331,10 @@ Final Documentation     RebuildTemplateData         CreateIssueRequest
 
 ### With Convergence Module
 
-The manager integrates with convergence when:
-1. Comparison finds blocking discrepancies that need human resolution
-2. Convergence criteria include waiting for Beads resolution
-3. Timeout handling affects convergence decisions
-
 ```python
 # In convergence loop
 if discrepancy.requires_human_resolution:
-    ticket = await beads_manager.create_discrepancy_ticket(
+    issue = await beads_manager.create_discrepancy_issue(
         DiscrepancyTemplateData(
             discrepancy_id=discrepancy.id,
             component_name=component.name,
@@ -340,8 +344,8 @@ if discrepancy.requires_human_resolution:
 
     # Option 1: Wait synchronously
     resolution = await beads_manager.wait_for_resolution(
-        ticket.ticket_key,
-        timeout_seconds=config.beads_ticket_timeout_hours * 3600
+        issue.issue_id,
+        timeout_seconds=config.beads_timeout_hours * 3600
     )
 
     # Option 2: Continue and check later
@@ -356,31 +360,25 @@ Beads configuration is loaded from `BeadsConfig`:
 ```python
 class BeadsConfig(BaseModel):
     enabled: bool = True
-    server: str = ""
-    project: str = "LEGACY_DOC"
-    rebuild_project: str = "REBUILD"
-    username: str = ""
-    api_token_env: str = "JIRA_API_TOKEN"
-    ticket_labels: list[str] = ["ai-documentation"]
-    auto_create_tickets: bool = True
+    directory: str = ".beads"
+    labels: list[str] = ["ai-documentation", "twinscribe"]
+    auto_create_issues: bool = True
+    discrepancy_priority: int = 1
+    rebuild_priority: int = 0
 ```
 
-### With Output Module
+## CLI Commands Used
 
-Final documentation can be exported as rebuild tickets:
-
-```python
-# After convergence complete
-for component in final_documentation.components:
-    await beads_manager.create_rebuild_ticket(
-        RebuildTemplateData(
-            component_name=component.name,
-            documentation=component.documentation,
-            call_graph=component.call_graph,
-            ...
-        )
-    )
-```
+| Command | Purpose |
+|---------|---------|
+| `bd init` | Initialize Beads in repository |
+| `bd create "Title" -p <priority>` | Create new issue |
+| `bd show <id>` | Get issue details |
+| `bd update <id> --status <status>` | Update issue |
+| `bd close <id>` | Close resolved issue |
+| `bd ready` | List ready issues |
+| `bd dep add <id> <dep_id>` | Add dependency |
+| `bd sync` | Sync with git |
 
 ## Resolution Actions
 
@@ -395,21 +393,21 @@ for component in final_documentation.components:
 
 ### Transient Errors
 
-- Network timeouts: Retry with exponential backoff
-- Rate limiting: Respect Retry-After headers
-- Server errors (5xx): Retry up to max_retries
+- CLI timeouts: Retry with exponential backoff
+- Git conflicts: Run `bd sync` and retry
+- File system errors: Log and retry
 
 ### Permanent Errors
 
-- Authentication failures: Raise `AuthenticationError`, require reconfiguration
-- Permission denied: Raise `PermissionError`, may need project access
-- Not found: Raise `NotFoundError`, ticket may have been deleted
+- Beads not initialized: Run `bd init` or raise error
+- Invalid issue ID: Raise `NotFoundError`
+- Permission denied: Raise filesystem error
 
 ### Timeout Handling
 
-When a ticket times out without resolution:
-1. Mark ticket as `EXPIRED` in tracker
-2. Log warning with ticket details
+When an issue times out without resolution:
+1. Mark issue as `EXPIRED` in tracker
+2. Log warning with issue details
 3. Return to convergence loop for fallback handling
 4. Options: auto-select based on static analysis, escalate, or fail
 
@@ -426,7 +424,7 @@ with open("tracker_state.json", "w") as f:
 # Restore state
 with open("tracker_state.json") as f:
     state = json.load(f)
-tracker = TicketTracker.from_dict(state)
+tracker = IssueTracker.from_dict(state)
 ```
 
 ## Usage Examples
@@ -439,24 +437,22 @@ from twinscribe.beads import (
     ManagerConfig,
     DiscrepancyTemplateData,
 )
-from twinscribe.beads.client import BeadsClientConfig
+from twinscribe.beads.client import BeadsClient, BeadsClientConfig
 
 # Initialize
 client_config = BeadsClientConfig(
-    server="https://your-org.atlassian.net",
-    username="user@example.com",
-    api_token=SecretStr("token"),
+    directory=".beads",
+    labels=["ai-documentation", "twinscribe"],
 )
-client = JiraBeadsClient(client_config)  # Concrete implementation
+client = BeadsClient(client_config)
 
 manager_config = ManagerConfig(
-    project="LEGACY_DOC",
     timeout_hours=24,
 )
 manager = BeadsLifecycleManager(client, manager_config)
 await manager.initialize()
 
-# Create discrepancy ticket
+# Create discrepancy issue
 data = DiscrepancyTemplateData(
     discrepancy_id="disc-001",
     component_name="calculate_total",
@@ -469,24 +465,24 @@ data = DiscrepancyTemplateData(
     context="Stream B may have hallucinated send_receipt call",
 )
 
-ticket = await manager.create_discrepancy_ticket(data)
-print(f"Created ticket: {ticket.ticket_key}")
+issue = await manager.create_discrepancy_issue(data)
+print(f"Created issue: {issue.issue_id}")
 
 # Wait for resolution
-resolution = await manager.wait_for_resolution(ticket.ticket_key)
+resolution = await manager.wait_for_resolution(issue.issue_id)
 if resolution:
     print(f"Resolved with action: {resolution.action}")
     # Apply resolution...
 else:
-    print("Ticket timed out")
+    print("Issue timed out")
 ```
 
 ### Async Monitoring
 
 ```python
 # Register callback for resolutions
-def handle_resolution(resolution: TicketResolution):
-    print(f"Ticket {resolution.ticket_key} resolved: {resolution.action}")
+def handle_resolution(resolution: IssueResolution):
+    print(f"Issue {resolution.issue_id} resolved: {resolution.action}")
     # Queue for processing...
 
 manager.on_resolution(handle_resolution)
@@ -500,18 +496,18 @@ await manager.start_monitoring()
 await manager.stop_monitoring()
 ```
 
-### Creating Rebuild Tickets
+### Creating Rebuild Issues
 
 ```python
 from twinscribe.beads import RebuildTemplateData
 
 # Create epic for the rebuild project
-epic_key = await manager.create_rebuild_epic(
+epic_id = await manager.create_rebuild_epic(
     "Legacy Billing Module Rebuild",
     components=[...],
 )
 
-# Create individual rebuild tickets
+# Create individual rebuild issues as subtasks
 for component in components:
     data = RebuildTemplateData(
         component_name=component.name,
@@ -525,19 +521,18 @@ for component in components:
         dependencies=component.dependencies,
         rebuild_priority=component.rebuild_order,
         complexity_score=component.complexity,
-        epic_key=epic_key,
+        parent_id=epic_id,
     )
 
-    await manager.create_rebuild_ticket(data)
+    await manager.create_rebuild_issue(data)
 ```
 
 ## Security Considerations
 
-1. **API Token Storage**: Tokens stored in environment variables, never in code or logs
-2. **SecretStr Usage**: Pydantic `SecretStr` prevents accidental token exposure
-3. **TLS Verification**: SSL verification enabled by default
-4. **Minimal Permissions**: Client should use token with minimal required permissions
-5. **Audit Trail**: All ticket operations are logged for audit purposes
+1. **Git-backed**: All issues stored in git, providing full audit trail
+2. **Local-first**: No external API credentials needed
+3. **Stealth mode**: Optional local-only mode without committing to shared repos
+4. **File permissions**: Respect filesystem permissions
 
 ## Testing Strategy
 
@@ -548,12 +543,11 @@ for component in components:
 - Error handling for various failure modes
 
 ### Integration Tests
-- Mock Jira API for end-to-end workflows
+- Mock CLI output for end-to-end workflows
 - Timeout handling verification
-- Concurrent polling behavior
 - State recovery after restart
 
 ### End-to-End Tests
-- Real Jira instance (test project)
+- Real Beads initialization and issue lifecycle
 - Full discrepancy workflow
-- Rebuild ticket creation
+- Rebuild issue creation with epic hierarchy

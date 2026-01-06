@@ -114,45 +114,47 @@ DEFAULT_DISCREPANCY_TEMPLATE = TicketTemplate(
     template_type=TemplateType.DISCREPANCY,
     summary_template="[Discrepancy] ${component_name}: ${discrepancy_type}",
     description_template="""
-h2. Discrepancy Details
+## Discrepancy Details
 
-*Component:* ${component_name}
-*Type:* ${component_type}
-*File:* {{${file_path}}}
-*Discrepancy Type:* ${discrepancy_type}
-*Iteration:* ${iteration}
+**Component:** ${component_name}
+**Type:** ${component_type}
+**File:** `${file_path}`
+**Discrepancy Type:** ${discrepancy_type}
+**Iteration:** ${iteration}
 
-h2. Stream Interpretations
+## Stream Interpretations
 
-h3. Stream A (Anthropic)
-{code}
+### Stream A (Anthropic)
+```
 ${stream_a_value}
-{code}
+```
 
-h3. Stream B (OpenAI)
-{code}
+### Stream B (OpenAI)
+```
 ${stream_b_value}
-{code}
+```
 
 ${static_analysis_section}
 
-h2. Context
+## Context
 ${context}
 
 ${previous_attempts_section}
 
-h2. Resolution Required
+## Resolution Required
 
 Please review the discrepancy above and provide guidance:
 
-# *Accept Stream A*: Use Stream A's interpretation
-# *Accept Stream B*: Use Stream B's interpretation
-# *Merge*: Provide a merged interpretation combining both
-# *Manual Override*: Provide the correct interpretation
+1. **Accept Stream A**: Use Stream A's interpretation
+2. **Accept Stream B**: Use Stream B's interpretation
+3. **Merge**: Provide a merged interpretation combining both
+4. **Manual Override**: Provide the correct interpretation
 
 Add a comment with your resolution in the format:
-{{RESOLUTION: <accept_a|accept_b|merge|manual>}}
+```
+RESOLUTION: <accept_a|accept_b|merge|manual>
 <your explanation and/or corrected content>
+```
 """.strip(),
     default_labels=["ai-documentation", "discrepancy"],
     default_priority="Medium",
@@ -165,47 +167,47 @@ DEFAULT_REBUILD_TEMPLATE = TicketTemplate(
     template_type=TemplateType.REBUILD,
     summary_template="[Rebuild] ${component_name} (${component_type})",
     description_template="""
-h2. Component Information
+## Component Information
 
-*Name:* ${component_name}
-*Type:* ${component_type}
-*Current Location:* {{${file_path}}}
-*Rebuild Priority:* ${rebuild_priority}
-*Complexity Score:* ${complexity_score}
+**Name:** ${component_name}
+**Type:** ${component_type}
+**Current Location:** `${file_path}`
+**Rebuild Priority:** ${rebuild_priority}
+**Complexity Score:** ${complexity_score}
 
-h2. Documentation
+## Documentation
 
-{code}
+```
 ${documentation}
-{code}
+```
 
-h2. Dependencies
+## Dependencies
 
-h3. This component depends on:
+### This component depends on:
 ${dependencies_list}
 
-h3. Components that depend on this:
+### Components that depend on this:
 ${dependents_list}
 
-h2. Call Graph
+## Call Graph
 
-h3. Calls (outgoing):
+### Calls (outgoing):
 ${calls_list}
 
-h3. Called by (incoming):
+### Called by (incoming):
 ${called_by_list}
 
-h2. Suggested Rebuild Approach
+## Suggested Rebuild Approach
 
 ${suggested_approach}
 
-h2. Acceptance Criteria
+## Acceptance Criteria
 
-* [ ] Component rebuilt following documentation
-* [ ] All dependencies resolved
-* [ ] Unit tests passing
-* [ ] Integration tests passing
-* [ ] Code review completed
+- [ ] Component rebuilt following documentation
+- [ ] All dependencies resolved
+- [ ] Unit tests passing
+- [ ] Integration tests passing
+- [ ] Code review completed
 """.strip(),
     default_labels=["ai-documentation", "rebuild"],
     default_priority="Medium",
@@ -298,19 +300,19 @@ class TicketTemplateEngine:
         # Build static analysis section
         if data.static_analysis_value:
             variables["static_analysis_section"] = f"""
-h3. Static Analysis (Ground Truth)
-{{code}}
+### Static Analysis (Ground Truth)
+```
 {data.static_analysis_value}
-{{code}}
+```
 """.strip()
         else:
             variables["static_analysis_section"] = ""
 
         # Build previous attempts section
         if data.previous_attempts:
-            attempts_text = "\n".join(f"* {attempt}" for attempt in data.previous_attempts)
+            attempts_text = "\n".join(f"- {attempt}" for attempt in data.previous_attempts)
             variables["previous_attempts_section"] = f"""
-h2. Previous Resolution Attempts
+## Previous Resolution Attempts
 {attempts_text}
 """.strip()
         else:
@@ -518,54 +520,53 @@ class ResolutionParser:
         return result[1] if result else None
 
 
-def format_jira_code_block(content: str, language: str = "") -> str:
-    """Format content as a Jira code block.
+def format_code_block(content: str, language: str = "") -> str:
+    """Format content as a Markdown code block.
 
     Args:
         content: Content to format
         language: Optional language for syntax highlighting
 
     Returns:
-        Jira-formatted code block
+        Markdown-formatted code block
     """
-    if language:
-        return f"{{code:{language}}}\n{content}\n{{code}}"
-    return f"{{code}}\n{content}\n{{code}}"
+    return f"```{language}\n{content}\n```"
 
 
-def format_jira_panel(
+def format_callout(
     content: str,
     title: str = "",
-    panel_type: str = "info",
+    callout_type: str = "info",
 ) -> str:
-    """Format content as a Jira panel.
+    """Format content as a Markdown callout/blockquote.
 
     Args:
-        content: Panel content
-        title: Optional panel title
-        panel_type: Panel type (info, warning, error, note)
+        content: Callout content
+        title: Optional callout title
+        callout_type: Callout type (info, warning, error, note)
 
     Returns:
-        Jira-formatted panel
+        Markdown-formatted callout
     """
-    if title:
-        return f"{{panel:title={title}|type={panel_type}}}\n{content}\n{{panel}}"
-    return f"{{panel:type={panel_type}}}\n{content}\n{{panel}}"
+    prefix = f"> **{callout_type.upper()}**" if not title else f"> **{title}**"
+    quoted_content = "\n".join(f"> {line}" for line in content.split("\n"))
+    return f"{prefix}\n{quoted_content}"
 
 
-def format_jira_table(
+def format_table(
     headers: list[str],
     rows: list[list[str]],
 ) -> str:
-    """Format data as a Jira table.
+    """Format data as a Markdown table.
 
     Args:
         headers: Table headers
         rows: Table rows
 
     Returns:
-        Jira-formatted table
+        Markdown-formatted table
     """
-    header_row = "||" + "||".join(headers) + "||"
-    data_rows = ["|" + "|".join(row) + "|" for row in rows]
-    return header_row + "\n" + "\n".join(data_rows)
+    header_row = "| " + " | ".join(headers) + " |"
+    separator = "| " + " | ".join(["---"] * len(headers)) + " |"
+    data_rows = ["| " + " | ".join(row) + " |" for row in rows]
+    return header_row + "\n" + separator + "\n" + "\n".join(data_rows)

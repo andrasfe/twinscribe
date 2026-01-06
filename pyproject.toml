@@ -31,9 +31,8 @@ dependencies = [
     "pycg>=0.0.7",
     "pyan3>=1.2.0",
 
-    # Beads integration (issue tracking)
-    "jira>=3.8.0",
-    "atlassian-python-api>=3.41.0",
+    # Beads integration (git-backed issue tracking)
+    # Beads CLI is installed separately via scripts/install-beads.sh
 
     # Data validation and models
     "pydantic>=2.0.0",
@@ -103,7 +102,7 @@ markers = [
     "integration: Integration tests for component interactions",
     "slow: Tests that take more than 1 second",
     "llm: Tests that would require LLM API calls (mocked in CI)",
-    "beads: Tests related to Beads/Jira integration",
+    "beads: Tests related to Beads integration",
     "static_analysis: Tests for static analysis functionality",
 ]
 filterwarnings = [

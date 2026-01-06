@@ -1,7 +1,7 @@
 """
-Ticket Tracker.
+Issue Tracker.
 
-Maps Beads/Jira tickets to discrepancies and tracks resolution status.
+Maps Beads issues to discrepancies and tracks resolution status.
 """
 
 from dataclasses import dataclass, field
@@ -35,7 +35,7 @@ class TrackedTicket:
     """A ticket being tracked by the system.
 
     Attributes:
-        ticket_key: Beads/Jira ticket key (e.g., LEGACY-123)
+        ticket_key: Beads issue ID (e.g., bd-a1b2)
         ticket_type: Type of ticket (discrepancy or rebuild)
         status: Current tracking status
         discrepancy_id: ID of associated discrepancy (for discrepancy tickets)

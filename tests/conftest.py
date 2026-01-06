@@ -530,21 +530,21 @@ def mock_env_vars(monkeypatch: pytest.MonkeyPatch) -> dict:
 
 @pytest.fixture
 def mock_beads_client() -> MagicMock:
-    """Create a mock Beads (Jira) client for testing issue operations."""
+    """Create a mock Beads client for testing issue operations."""
     client = MagicMock()
 
     # Mock issue creation
     mock_issue = MagicMock()
-    mock_issue.key = "TEST-123"
-    mock_issue.id = "12345"
-    mock_issue.fields.status.name = "Open"
+    mock_issue.id = "bd-a1b2"
+    mock_issue.title = "Test Issue"
+    mock_issue.status = "open"
     client.create_issue.return_value = mock_issue
 
     # Mock issue retrieval
-    client.issue.return_value = mock_issue
+    client.get_issue.return_value = mock_issue
 
-    # Mock search
-    client.search_issues.return_value = [mock_issue]
+    # Mock list ready
+    client.list_ready.return_value = [mock_issue]
 
     return client
 
