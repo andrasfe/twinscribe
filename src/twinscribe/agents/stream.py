@@ -5,6 +5,7 @@ Defines the interface for a complete documentation stream that manages
 a documenter/validator pair and processes components in topological order.
 """
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -714,6 +715,10 @@ class ConcreteDocumentationStream(DocumentationStream):
                 documentation = await self._documenter.process(documenter_input)
                 result.documentation = documentation
 
+                # Rate limit delay between documenter and validator
+                if self._config.rate_limit_delay > 0:
+                    await asyncio.sleep(self._config.rate_limit_delay)
+
                 # Step 2: Validate documentation
                 self._logger.debug(f"Validating component {component_id}")
 
@@ -892,6 +897,10 @@ class ConcreteDocumentationStream(DocumentationStream):
         # Process through documenter
         try:
             documentation = await self._documenter.process(documenter_input)
+
+            # Rate limit delay between documenter and validator
+            if self._config.rate_limit_delay > 0:
+                await asyncio.sleep(self._config.rate_limit_delay)
 
             # Validate
             validator_input = ValidatorInput(
