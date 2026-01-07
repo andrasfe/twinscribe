@@ -503,18 +503,30 @@ class AsyncLLMClient:
         try:
             async for attempt in AsyncRetrying(
                 stop=stop_after_attempt(self._max_retries),
-                wait=wait_exponential(multiplier=1, min=1, max=60),
+                wait=wait_exponential(multiplier=2, min=4, max=120),
                 retry=retry_if_exception_type((RateLimitError, APIError)),
                 reraise=True,
             ):
                 with attempt:
+                    attempt_num = attempt.retry_state.attempt_number
+                    call_time = time.strftime("%H:%M:%S")
+                    logger.info(
+                        f"[{call_time}] API call to {model_config.name} "
+                        f"(attempt {attempt_num}/{self._max_retries})"
+                    )
                     response = await client.post(OPENROUTER_CHAT_ENDPOINT, json=body)
-                    return await self._handle_response(
+                    result = await self._handle_response(
                         response=response,
                         model_config=model_config,
                         start_time=start_time,
                         track_usage=track_usage,
                     )
+                    end_time = time.strftime("%H:%M:%S")
+                    logger.info(
+                        f"[{end_time}] API call completed: {model_config.name} "
+                        f"({result.latency_ms}ms)"
+                    )
+                    return result
         except RetryError:
             await self._usage_tracker.track_error()
             raise
@@ -548,6 +560,11 @@ class AsyncLLMClient:
         if response.status_code == 401:
             raise AuthenticationError("Invalid API key")
         elif response.status_code == 429:
+            retry_after = response.headers.get("Retry-After", "unknown")
+            logger.warning(
+                f"[{time.strftime('%H:%M:%S')}] Rate limited! "
+                f"Retry-After: {retry_after}s"
+            )
             raise RateLimitError("Rate limit exceeded")
         elif response.status_code == 404:
             raise ModelNotFoundError("Model not found")
