@@ -131,12 +131,37 @@ convergence:
 # Document a Python codebase
 twinscribe document /path/to/codebase --language python
 
+# With verbose output (shows detailed progress)
+twinscribe document /path/to/codebase --language python -v
+
+# With custom delay between API calls (default: 2 seconds)
+twinscribe document /path/to/codebase --language python -d 5
+
+# Run streams in parallel (faster but may hit rate limits)
+twinscribe document /path/to/codebase --language python --parallel
+
 # With custom configuration
 twinscribe document /path/to/codebase --config config.yaml
+
+# Dry run (no external API calls or ticket creation)
+twinscribe document /path/to/codebase --dry-run
 
 # Generate only call graph (no documentation)
 twinscribe analyze /path/to/codebase --output call_graph.json
 ```
+
+### CLI Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--language` | `-l` | Programming language (python, java, javascript) |
+| `--config` | `-c` | Path to configuration file |
+| `--output` | `-o` | Output directory (default: output) |
+| `--max-iterations` | | Maximum convergence iterations (default: 5) |
+| `--dry-run` | | Analyze without creating tickets |
+| `--parallel` | | Run both streams in parallel |
+| `--verbose` | `-v` | Enable detailed progress output |
+| `--delay` | `-d` | Delay between API calls in seconds (default: 2.0) |
 
 ### Python API
 
