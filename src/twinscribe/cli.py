@@ -77,6 +77,12 @@ def main(ctx: click.Context, verbose: bool) -> None:
     is_flag=True,
     help="Run both documentation streams in parallel (may hit rate limits)",
 )
+@click.option(
+    "--verbose",
+    "-v",
+    is_flag=True,
+    help="Enable verbose output with detailed progress",
+)
 @click.pass_context
 def document(
     ctx: click.Context,
@@ -87,12 +93,14 @@ def document(
     max_iterations: int,
     dry_run: bool,
     parallel: bool,
+    verbose: bool,
 ) -> None:
     """Generate documentation for a codebase.
 
     CODEBASE_PATH is the path to the codebase to document.
     """
-    verbose = ctx.obj.get("verbose", False)
+    # Allow verbose from either global or local flag
+    verbose = verbose or ctx.obj.get("verbose", False)
 
     console.print(
         Panel(
