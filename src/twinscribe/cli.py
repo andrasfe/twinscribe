@@ -161,6 +161,18 @@ async def _run_document_pipeline(
     Returns:
         Dictionary with documentation results and metrics
     """
+    import logging
+
+    # Configure logging based on verbosity
+    log_level = logging.INFO if verbose else logging.WARNING
+    logging.basicConfig(
+        level=log_level,
+        format="%(message)s",
+        handlers=[logging.StreamHandler()],
+    )
+    # Set twinscribe loggers to appropriate level
+    logging.getLogger("twinscribe").setLevel(log_level)
+
     from twinscribe.analysis.oracle import OracleFactory
     from twinscribe.config import (
         ConfigurationError,
@@ -291,6 +303,8 @@ async def _run_document_pipeline(
         )
 
         # Progress callback for live updates
+        last_phase = [None]  # Use list to allow mutation in closure
+
         def on_progress(state: OrchestratorState):
             phase_names = {
                 OrchestratorPhase.NOT_STARTED: "Not Started",
@@ -303,11 +317,32 @@ async def _run_document_pipeline(
                 OrchestratorPhase.COMPLETED: "Completed",
                 OrchestratorPhase.FAILED: "Failed",
             }
-            if verbose:
+            phase_name = phase_names.get(state.phase, state.phase.value)
+
+            # Always show phase changes
+            if state.phase != last_phase[0]:
+                last_phase[0] = state.phase
+                if state.phase == OrchestratorPhase.DISCOVERING:
+                    console.print(f"[cyan]→ {phase_name}...[/cyan]")
+                elif state.phase == OrchestratorPhase.DOCUMENTING:
+                    console.print(f"[cyan]→ {phase_name} ({state.total_components} components)...[/cyan]")
+                elif state.phase == OrchestratorPhase.COMPARING:
+                    console.print(f"[cyan]→ {phase_name}...[/cyan]")
+                elif state.phase == OrchestratorPhase.RESOLVING:
+                    console.print(f"[cyan]→ {phase_name} ({state.pending_discrepancies} discrepancies)...[/cyan]")
+                elif state.phase == OrchestratorPhase.FINALIZING:
+                    console.print(f"[cyan]→ {phase_name}...[/cyan]")
+                elif state.phase == OrchestratorPhase.COMPLETED:
+                    console.print(f"[green]✓ {phase_name}[/green]")
+                elif state.phase == OrchestratorPhase.FAILED:
+                    console.print(f"[red]✗ {phase_name}[/red]")
+
+            # Show progress during documenting phase
+            if verbose and state.phase == OrchestratorPhase.DOCUMENTING:
                 console.print(
-                    f"[dim]Phase: {phase_names.get(state.phase, state.phase.value)} | "
-                    f"Iteration: {state.iteration} | "
-                    f"Processed: {state.processed_components}/{state.total_components}[/dim]"
+                    f"[dim]  Iteration {state.iteration} | "
+                    f"Processed: {state.processed_components}/{state.total_components} | "
+                    f"Converged: {state.converged_components}[/dim]"
                 )
 
         # Helper to detect provider from model name

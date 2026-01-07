@@ -557,9 +557,17 @@ class ConcreteDocumentationStream(DocumentationStream):
         )
 
         total = len(components)
+        stream_name = "Stream A" if self._config.stream_id.value == "A" else "Stream B"
+
+        self._logger.info(f"{stream_name}: Processing {total} components")
 
         for index, component in enumerate(components):
             component_id = component.component_id
+
+            # Log progress
+            self._logger.info(
+                f"{stream_name}: [{index + 1}/{total}] Processing {component_id}"
+            )
 
             # Notify progress callback
             if self._progress_callback:
@@ -590,18 +598,23 @@ class ConcreteDocumentationStream(DocumentationStream):
                 )
 
                 # Update result
+                duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+
                 if proc_result.success:
                     result.successful += 1
                     if proc_result.documentation:
                         self._output.add_output(proc_result.documentation)
                         self._processing_context[component_id] = proc_result.documentation
                         result.total_tokens += proc_result.documentation.metadata.token_count or 0
+                    self._logger.info(
+                        f"{stream_name}: [{index + 1}/{total}] ✓ {component_id} ({duration_ms:.0f}ms)"
+                    )
                 else:
                     result.failed += 1
                     result.failed_component_ids.append(component_id)
-
-                # Calculate duration
-                duration_ms = (datetime.now() - start_time).total_seconds() * 1000
+                    self._logger.warning(
+                        f"{stream_name}: [{index + 1}/{total}] ✗ {component_id} failed ({duration_ms:.0f}ms)"
+                    )
 
                 # Notify progress callback
                 if self._progress_callback:
