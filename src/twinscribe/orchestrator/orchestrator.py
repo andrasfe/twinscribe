@@ -14,6 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -40,6 +41,8 @@ class OrchestratorConfig(BaseModel):
         max_iterations: Maximum documentation iterations
         parallel_components: Number of components to process in parallel
         parallel_streams: Run both streams in parallel (may hit rate limits)
+        rate_limit_delay: Delay in seconds between component processing (0 = no delay)
+        exclude_component_patterns: Patterns to exclude from component IDs
         wait_for_beads: Whether to wait for Beads resolution
         beads_timeout_hours: Timeout for Beads ticket resolution
         skip_validation: Skip validation step (for testing)
@@ -50,6 +53,17 @@ class OrchestratorConfig(BaseModel):
     max_iterations: int = Field(default=5, ge=1, le=20)
     parallel_components: int = Field(default=10, ge=1, le=100)
     parallel_streams: bool = Field(default=False, description="Run streams in parallel")
+    rate_limit_delay: float = Field(default=0.5, ge=0, description="Delay between API calls in seconds")
+    exclude_component_patterns: list[str] = Field(
+        default_factory=lambda: [
+            ".venv.",
+            "venv.",
+            "site-packages.",
+            "__pycache__.",
+            "node_modules.",
+        ],
+        description="Patterns to exclude from component IDs",
+    )
     wait_for_beads: bool = Field(default=True)
     beads_timeout_hours: int = Field(default=48, ge=0)
     skip_validation: bool = Field(default=False)
@@ -297,6 +311,26 @@ class DualStreamOrchestrator:
         # Get the codebase path from the oracle
         codebase_path = self._oracle.codebase_path
 
+        # Read .gitignore patterns and add them to exclusion
+        gitignore_path = Path(codebase_path) / ".gitignore"
+        exclude_patterns = list(self._config.exclude_component_patterns)
+        if gitignore_path.exists():
+            try:
+                with open(gitignore_path) as f:
+                    for line in f:
+                        line = line.strip()
+                        # Skip comments and empty lines
+                        if line and not line.startswith("#"):
+                            # Convert gitignore patterns to simple substring matches
+                            pattern = line.rstrip("/").replace("*", "").replace("/", ".")
+                            if pattern:
+                                exclude_patterns.append(pattern)
+            except OSError:
+                pass  # Ignore read errors
+
+        # Update config with combined patterns
+        self._config.exclude_component_patterns = exclude_patterns
+
         # Create component discovery with default settings
         discovery = ComponentDiscovery(
             codebase_path=codebase_path,
@@ -500,19 +534,39 @@ class DualStreamOrchestrator:
     def _get_components_to_process(self) -> list["Component"]:
         """Get components to process in this iteration.
 
-        First iteration: all components
+        First iteration: all components (filtered)
         Subsequent iterations: only components with discrepancies
 
         Returns:
             List of components to process
         """
+        # Filter out excluded components
+        filtered = [
+            c for c in self._components
+            if not self._should_exclude_component(c.component_id)
+        ]
+
         if self._state.iteration == 1:
-            return self._components
+            return filtered
 
         # Get components with unresolved discrepancies
         # This would check the comparison results from previous iteration
-        # For now, return all components (optimization for later)
-        return self._components
+        # For now, return filtered components (optimization for later)
+        return filtered
+
+    def _should_exclude_component(self, component_id: str) -> bool:
+        """Check if a component should be excluded based on patterns.
+
+        Args:
+            component_id: The component identifier
+
+        Returns:
+            True if the component should be excluded
+        """
+        for pattern in self._config.exclude_component_patterns:
+            if pattern in component_id:
+                return True
+        return False
 
     async def _apply_ground_truth_resolution(
         self,

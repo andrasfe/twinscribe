@@ -59,6 +59,7 @@ class StreamConfig(BaseModel):
         batch_size: Number of components to process in parallel
         max_retries: Maximum retries per component
         continue_on_error: Whether to continue if a component fails
+        rate_limit_delay: Delay in seconds between API calls to avoid rate limits
     """
 
     stream_id: StreamId = Field(..., description="Stream identifier")
@@ -78,6 +79,11 @@ class StreamConfig(BaseModel):
     continue_on_error: bool = Field(
         default=True,
         description="Continue if component fails",
+    )
+    rate_limit_delay: float = Field(
+        default=1.0,
+        ge=0,
+        description="Delay between API calls in seconds",
     )
 
 
@@ -628,6 +634,10 @@ class ConcreteDocumentationStream(DocumentationStream):
 
                 if not self._config.continue_on_error:
                     raise
+
+            # Rate limit delay between components
+            if self._config.rate_limit_delay > 0 and index < total - 1:
+                await asyncio.sleep(self._config.rate_limit_delay)
 
         # Finalize result
         result.completed_at = datetime.now()
