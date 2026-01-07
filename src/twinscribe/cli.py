@@ -83,6 +83,13 @@ def main(ctx: click.Context, verbose: bool) -> None:
     is_flag=True,
     help="Enable verbose output with detailed progress",
 )
+@click.option(
+    "--delay",
+    "-d",
+    type=float,
+    default=2.0,
+    help="Delay in seconds between API calls to avoid rate limits (default: 2.0)",
+)
 @click.pass_context
 def document(
     ctx: click.Context,
@@ -94,6 +101,7 @@ def document(
     dry_run: bool,
     parallel: bool,
     verbose: bool,
+    delay: float,
 ) -> None:
     """Generate documentation for a codebase.
 
@@ -136,6 +144,7 @@ def document(
                 dry_run=dry_run,
                 parallel=parallel,
                 verbose=verbose,
+                delay=delay,
             )
         )
 
@@ -163,6 +172,7 @@ async def _run_document_pipeline(
     dry_run: bool,
     parallel: bool,
     verbose: bool,
+    delay: float,
 ) -> dict | None:
     """Run the documentation pipeline asynchronously.
 
@@ -385,6 +395,7 @@ async def _run_document_pipeline(
             batch_size=5,
             max_retries=3,
             continue_on_error=True,
+            rate_limit_delay=delay,
         )
 
         stream_b_config = StreamConfig(
@@ -410,6 +421,7 @@ async def _run_document_pipeline(
             batch_size=5,
             max_retries=3,
             continue_on_error=True,
+            rate_limit_delay=delay,
         )
 
         # Create streams
