@@ -39,6 +39,7 @@ class OrchestratorConfig(BaseModel):
     Attributes:
         max_iterations: Maximum documentation iterations
         parallel_components: Number of components to process in parallel
+        parallel_streams: Run both streams in parallel (may hit rate limits)
         wait_for_beads: Whether to wait for Beads resolution
         beads_timeout_hours: Timeout for Beads ticket resolution
         skip_validation: Skip validation step (for testing)
@@ -48,6 +49,7 @@ class OrchestratorConfig(BaseModel):
 
     max_iterations: int = Field(default=5, ge=1, le=20)
     parallel_components: int = Field(default=10, ge=1, le=100)
+    parallel_streams: bool = Field(default=False, description="Run streams in parallel")
     wait_for_beads: bool = Field(default=True)
     beads_timeout_hours: int = Field(default=48, ge=0)
     skip_validation: bool = Field(default=False)
@@ -411,14 +413,36 @@ class DualStreamOrchestrator:
         """
         iteration = self._state.iteration
 
-        # Step 1: Parallel documentation
+        # Step 1: Documentation (serial by default to avoid rate limits)
         components_to_process = self._get_components_to_process()
         self._state.processed_components = 0
 
-        output_a, output_b = await asyncio.gather(
-            self._stream_a.process(components_to_process, self._processing_order),
-            self._stream_b.process(components_to_process, self._processing_order),
-        )
+        if self._config.parallel_streams:
+            # Parallel execution (may hit rate limits)
+            output_a, output_b = await asyncio.gather(
+                self._stream_a.process(
+                    components_to_process,
+                    self._source_code_map,
+                    self._oracle.call_graph,
+                ),
+                self._stream_b.process(
+                    components_to_process,
+                    self._source_code_map,
+                    self._oracle.call_graph,
+                ),
+            )
+        else:
+            # Serial execution (default - avoids rate limits)
+            output_a = await self._stream_a.process(
+                components_to_process,
+                self._source_code_map,
+                self._oracle.call_graph,
+            )
+            output_b = await self._stream_b.process(
+                components_to_process,
+                self._source_code_map,
+                self._oracle.call_graph,
+            )
 
         self._state.processed_components = len(components_to_process)
         self._notify_progress()

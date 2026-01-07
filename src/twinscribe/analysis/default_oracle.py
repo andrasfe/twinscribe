@@ -142,6 +142,11 @@ class DefaultStaticAnalysisOracle(StaticAnalysisOracle):
 
             return PyCGAnalyzer()
 
+        elif analyzer_type == AnalyzerType.AST:
+            from twinscribe.analysis.ast_analyzer import ASTAnalyzer
+
+            return ASTAnalyzer()
+
         elif analyzer_type == AnalyzerType.PYAN3:
             # Pyan3 analyzer would be implemented similarly
             # For now, return None as it's not implemented
@@ -447,7 +452,7 @@ def create_python_oracle(
     config = OracleConfig(
         language=Language.PYTHON,
         primary_analyzer=AnalyzerType.PYCG,
-        fallback_analyzers=[AnalyzerType.PYAN3],
+        fallback_analyzers=[AnalyzerType.AST],  # AST is always available
         cache_enabled=cache_enabled,
         normalization=NormalizationConfig(
             strip_module_prefix=strip_prefix,

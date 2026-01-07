@@ -72,6 +72,11 @@ def main(ctx: click.Context, verbose: bool) -> None:
     is_flag=True,
     help="Analyze without creating Beads tickets or modifying external systems",
 )
+@click.option(
+    "--parallel",
+    is_flag=True,
+    help="Run both documentation streams in parallel (may hit rate limits)",
+)
 @click.pass_context
 def document(
     ctx: click.Context,
@@ -81,6 +86,7 @@ def document(
     output: str,
     max_iterations: int,
     dry_run: bool,
+    parallel: bool,
 ) -> None:
     """Generate documentation for a codebase.
 
@@ -120,6 +126,7 @@ def document(
                 output_dir=output,
                 max_iterations=max_iterations,
                 dry_run=dry_run,
+                parallel=parallel,
                 verbose=verbose,
             )
         )
@@ -146,6 +153,7 @@ async def _run_document_pipeline(
     output_dir: str,
     max_iterations: int,
     dry_run: bool,
+    parallel: bool,
     verbose: bool,
 ) -> dict | None:
     """Run the documentation pipeline asynchronously.
@@ -252,13 +260,14 @@ async def _run_document_pipeline(
     # Check if orchestrator dependencies are available
     try:
         from twinscribe.agents import (
+            ComparatorConfig,
             ConcreteDocumentationStream,
             DocumenterConfig,
             StreamConfig,
             ValidatorConfig,
             create_comparator_agent,
         )
-        from twinscribe.models.base import StreamId
+        from twinscribe.models.base import ModelTier, StreamId
 
         orchestrator_available = True
     except ImportError as e:
@@ -273,6 +282,7 @@ async def _run_document_pipeline(
         orch_config = OrchestratorConfig(
             max_iterations=max_iterations,
             parallel_components=10,
+            parallel_streams=parallel,
             wait_for_beads=not dry_run,
             beads_timeout_hours=cfg.convergence.beads_ticket_timeout_hours,
             skip_validation=False,
@@ -300,15 +310,31 @@ async def _run_document_pipeline(
                     f"Processed: {state.processed_components}/{state.total_components}[/dim]"
                 )
 
+        # Helper to detect provider from model name
+        def get_provider(model_name: str) -> str:
+            if "claude" in model_name.lower():
+                return "anthropic"
+            elif "gpt" in model_name.lower() or "o1" in model_name.lower():
+                return "openai"
+            return "openrouter"  # Default to openrouter
+
         # Create stream configurations using models config
         stream_a_config = StreamConfig(
-            stream_id=StreamId.A,
+            stream_id=StreamId.STREAM_A,
             documenter_config=DocumenterConfig(
+                agent_id="A1",
+                stream_id=StreamId.STREAM_A,
+                model_tier=ModelTier.GENERATION,
+                provider=get_provider(cfg.models.stream_a.documenter),
                 model_name=cfg.models.stream_a.documenter,
                 max_tokens=4096,
                 temperature=0.0,
             ),
             validator_config=ValidatorConfig(
+                agent_id="A2",
+                stream_id=StreamId.STREAM_A,
+                model_tier=ModelTier.VALIDATION,
+                provider=get_provider(cfg.models.stream_a.validator),
                 model_name=cfg.models.stream_a.validator,
                 max_tokens=2048,
                 temperature=0.0,
@@ -319,13 +345,21 @@ async def _run_document_pipeline(
         )
 
         stream_b_config = StreamConfig(
-            stream_id=StreamId.B,
+            stream_id=StreamId.STREAM_B,
             documenter_config=DocumenterConfig(
+                agent_id="B1",
+                stream_id=StreamId.STREAM_B,
+                model_tier=ModelTier.GENERATION,
+                provider=get_provider(cfg.models.stream_b.documenter),
                 model_name=cfg.models.stream_b.documenter,
                 max_tokens=4096,
                 temperature=0.0,
             ),
             validator_config=ValidatorConfig(
+                agent_id="B2",
+                stream_id=StreamId.STREAM_B,
+                model_tier=ModelTier.VALIDATION,
+                provider=get_provider(cfg.models.stream_b.validator),
                 model_name=cfg.models.stream_b.validator,
                 max_tokens=2048,
                 temperature=0.0,
@@ -340,18 +374,28 @@ async def _run_document_pipeline(
         stream_b = ConcreteDocumentationStream(stream_b_config)
 
         # Create comparator
-        comparator = create_comparator_agent(
+        comparator_config = ComparatorConfig(
+            agent_id="C",
+            model_tier=ModelTier.ARBITRATION,
+            provider=get_provider(cfg.models.comparator),
             model_name=cfg.models.comparator,
-            call_graph=oracle.call_graph,
+            max_tokens=4096,
+            temperature=0.0,
         )
+        comparator = create_comparator_agent(config=comparator_config)
 
         # Create Beads manager if enabled and not dry run
         beads_manager = None
         if cfg.beads.enabled and not dry_run:
             try:
-                from twinscribe.beads import BeadsLifecycleManager
+                from twinscribe.beads import DocumentationLifecycleManager
+                from twinscribe.beads.lifecycle import LifecycleManagerConfig
 
-                beads_manager = BeadsLifecycleManager(cfg.beads)
+                lifecycle_config = LifecycleManagerConfig(
+                    beads_directory=".beads",
+                    default_labels=cfg.beads.ticket_labels,
+                )
+                beads_manager = DocumentationLifecycleManager(config=lifecycle_config)
             except ImportError:
                 if verbose:
                     console.print("[yellow]Beads integration not available[/yellow]")

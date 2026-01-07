@@ -154,34 +154,45 @@ class ModelConfig(BaseModel):
 
 
 # Default model configurations
+# Model names must be valid OpenRouter model IDs (without provider prefix)
+_SONNET_CONFIG = ModelConfig(
+    name="claude-3-5-sonnet-20241022",
+    provider=ModelProvider.OPENROUTER,
+    tier=ModelTier.GENERATION,
+    cost_per_million_input=3.0,
+    cost_per_million_output=15.0,
+    max_tokens=4096,
+    context_window=200000,
+)
+_HAIKU_CONFIG = ModelConfig(
+    name="claude-3-5-haiku-20241022",
+    provider=ModelProvider.OPENROUTER,
+    tier=ModelTier.VALIDATION,
+    cost_per_million_input=0.80,
+    cost_per_million_output=4.0,
+    max_tokens=2048,
+    context_window=200000,
+)
+_OPUS_CONFIG = ModelConfig(
+    name="claude-opus-4-20250514",
+    provider=ModelProvider.OPENROUTER,
+    tier=ModelTier.ARBITRATION,
+    cost_per_million_input=15.0,
+    cost_per_million_output=75.0,
+    max_tokens=8192,
+    context_window=200000,
+)
+
 DEFAULT_MODELS = {
-    "claude-sonnet-4-5": ModelConfig(
-        name="claude-sonnet-4-5-20250929",
-        provider=ModelProvider.OPENROUTER,
-        tier=ModelTier.GENERATION,
-        cost_per_million_input=3.0,
-        cost_per_million_output=15.0,
-        max_tokens=4096,
-        context_window=200000,
-    ),
-    "claude-haiku-4-5": ModelConfig(
-        name="claude-haiku-4-5-20251001",
-        provider=ModelProvider.OPENROUTER,
-        tier=ModelTier.VALIDATION,
-        cost_per_million_input=0.25,
-        cost_per_million_output=1.25,
-        max_tokens=2048,
-        context_window=200000,
-    ),
-    "claude-opus-4-5": ModelConfig(
-        name="claude-opus-4-5-20251101",
-        provider=ModelProvider.OPENROUTER,
-        tier=ModelTier.ARBITRATION,
-        cost_per_million_input=15.0,
-        cost_per_million_output=75.0,
-        max_tokens=8192,
-        context_window=200000,
-    ),
+    # Claude models with various aliases
+    "claude-sonnet-4": _SONNET_CONFIG,
+    "claude-sonnet-4-5": _SONNET_CONFIG,  # Alias for tests
+    "claude-3.5-sonnet": _SONNET_CONFIG,
+    "claude-haiku-4-5": _HAIKU_CONFIG,  # Alias for tests
+    "claude-3.5-haiku": _HAIKU_CONFIG,
+    "claude-opus-4": _OPUS_CONFIG,
+    "claude-opus-4-5": _OPUS_CONFIG,  # Alias for tests
+    # GPT models
     "gpt-4o": ModelConfig(
         name="gpt-4o",
         provider=ModelProvider.OPENROUTER,
@@ -233,8 +244,8 @@ class ModelsConfig(BaseModel):
 
     stream_a: StreamModelsConfig = Field(
         default_factory=lambda: StreamModelsConfig(
-            documenter="claude-sonnet-4-5",
-            validator="claude-haiku-4-5",
+            documenter="claude-3.5-sonnet",
+            validator="claude-3.5-haiku",
         ),
         description="Stream A models",
     )
@@ -246,7 +257,7 @@ class ModelsConfig(BaseModel):
         description="Stream B models",
     )
     comparator: str = Field(
-        default="claude-opus-4-5",
+        default="claude-opus-4",
         description="Comparator model",
     )
     custom_models: dict[str, ModelConfig] = Field(

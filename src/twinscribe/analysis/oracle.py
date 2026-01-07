@@ -426,7 +426,7 @@ class OracleFactory:
         config = OracleConfig(
             language=Language.PYTHON,
             primary_analyzer=AnalyzerType.PYCG,
-            fallback_analyzers=[AnalyzerType.PYAN3],
+            fallback_analyzers=[AnalyzerType.AST],  # AST is always available
             cache_enabled=cache_enabled,
             normalization=NormalizationConfig(
                 strip_module_prefix=strip_prefix,

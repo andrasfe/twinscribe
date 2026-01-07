@@ -20,6 +20,7 @@ class AnalyzerType(str, Enum):
 
     PYCG = "pycg"  # Python Call Graph
     PYAN3 = "pyan3"  # Python analyzer
+    AST = "ast"  # Built-in AST analyzer (fallback, no dependencies)
     JAVA_CALLGRAPH = "java-callgraph"  # Java call graph
     WALA = "wala"  # IBM WALA for Java
     TS_CALLGRAPH = "typescript-call-graph"  # TypeScript/JavaScript

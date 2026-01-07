@@ -241,7 +241,7 @@ class TestAsyncLLMClient:
         assert config.name == "gpt-4o"
 
         config = client._get_model_config("claude-sonnet-4-5")
-        assert config.name == "claude-sonnet-4-5-20250929"
+        assert config.name == "claude-3-5-sonnet-20241022"
 
     def test_get_model_config_unknown(self):
         """Test getting unknown model configuration."""

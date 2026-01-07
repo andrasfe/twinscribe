@@ -395,7 +395,8 @@ class MockDocumentationStream(DocumentationStream):
     async def process(
         self,
         components: list[Component],
-        processing_order: list[str],
+        source_code_map: dict[str, str],
+        ground_truth: Any,
     ) -> StreamOutput:
         """Process components using mock output."""
         if not self._initialized:

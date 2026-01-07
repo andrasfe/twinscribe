@@ -119,18 +119,18 @@ class TestModelsConfig:
         """Test default model configuration."""
         config = ModelsConfig()
 
-        assert config.stream_a.documenter == "claude-sonnet-4-5"
-        assert config.stream_a.validator == "claude-haiku-4-5"
+        assert config.stream_a.documenter == "claude-3.5-sonnet"
+        assert config.stream_a.validator == "claude-3.5-haiku"
         assert config.stream_b.documenter == "gpt-4o"
         assert config.stream_b.validator == "gpt-4o-mini"
-        assert config.comparator == "claude-opus-4-5"
+        assert config.comparator == "claude-opus-4"
 
     def test_get_model_config_default(self):
         """Test getting default model config."""
         config = ModelsConfig()
         model = config.get_model_config("claude-sonnet-4-5")
 
-        assert model.name == "claude-sonnet-4-5-20250929"
+        assert model.name == "claude-3-5-sonnet-20241022"
         assert model.tier == ModelTier.GENERATION
 
     def test_get_model_config_custom(self):
