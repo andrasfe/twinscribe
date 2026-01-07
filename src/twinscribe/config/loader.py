@@ -32,20 +32,31 @@ CONFIG_ENV_VAR = "TWINSCRIBE_CONFIG"
 # Environment variable overrides for configuration settings
 # Maps env var name to config path (dot-separated)
 ENV_VAR_OVERRIDES = {
-    # Model settings
+    # Model settings (TWINSCRIBE_ prefix)
     "TWINSCRIBE_MODEL_PROVIDER": "models.stream_a.documenter",
     "TWINSCRIBE_STREAM_A_DOCUMENTER": "models.stream_a.documenter",
     "TWINSCRIBE_STREAM_A_VALIDATOR": "models.stream_a.validator",
     "TWINSCRIBE_STREAM_B_DOCUMENTER": "models.stream_b.documenter",
     "TWINSCRIBE_STREAM_B_VALIDATOR": "models.stream_b.validator",
     "TWINSCRIBE_COMPARATOR": "models.comparator",
+    # Model settings (legacy _MODEL suffix)
+    "STREAM_A_DOCUMENTER_MODEL": "models.stream_a.documenter",
+    "STREAM_A_VALIDATOR_MODEL": "models.stream_a.validator",
+    "STREAM_B_DOCUMENTER_MODEL": "models.stream_b.documenter",
+    "STREAM_B_VALIDATOR_MODEL": "models.stream_b.validator",
+    "COMPARATOR_MODEL": "models.comparator",
     # Convergence settings
     "TWINSCRIBE_MAX_ITERATIONS": "convergence.max_iterations",
+    "MAX_ITERATIONS": "convergence.max_iterations",
     "TWINSCRIBE_CONVERGENCE_THRESHOLD": "convergence.call_graph_match_threshold",
+    "CALL_GRAPH_MATCH_THRESHOLD": "convergence.call_graph_match_threshold",
+    "DOCUMENTATION_SIMILARITY_THRESHOLD": "convergence.documentation_similarity_threshold",
     # Output settings
     "TWINSCRIBE_OUTPUT_DIR": "output.base_dir",
+    "OUTPUT_DIR": "output.base_dir",
     # Logging settings
     "TWINSCRIBE_LOG_LEVEL": "logging.level",
+    "LOG_LEVEL": "logging.level",
     "TWINSCRIBE_LOG_FILE": "logging.file",
     # Runtime flags
     "TWINSCRIBE_DEBUG": "debug",
@@ -629,19 +640,34 @@ def reset_config() -> None:
 
 
 def create_default_config(codebase_path: str) -> TwinscribeConfig:
-    """Create a configuration with defaults.
+    """Create a configuration with defaults and environment overrides.
 
-    Useful for programmatic configuration without a YAML file.
+    Loads environment variables from .env file and applies TWINSCRIBE_*
+    and model-related environment variable overrides.
 
     Args:
         codebase_path: Path to the codebase
 
     Returns:
-        TwinscribeConfig with defaults
+        TwinscribeConfig with defaults and env overrides applied
     """
-    from twinscribe.config.models import CodebaseConfig
+    # Load environment first (loads .env file if present)
+    load_environment(".env")
 
-    return TwinscribeConfig(codebase=CodebaseConfig(path=codebase_path))
+    # Start with minimal config dict
+    config_dict: dict[str, Any] = {
+        "codebase": {"path": codebase_path},
+    }
+
+    # Apply environment variable overrides
+    loader = ConfigLoader()
+    config_dict = loader._apply_env_overrides(config_dict)
+
+    # Clean up None values
+    config_dict = loader._clean_none_values(config_dict)
+
+    from twinscribe.config.models import TwinscribeConfig as TsConfig
+    return TsConfig(**config_dict)
 
 
 def get_loader() -> ConfigLoader | None:

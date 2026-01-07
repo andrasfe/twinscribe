@@ -354,9 +354,6 @@ class AsyncLLMClient:
 
         Returns:
             ModelConfig for the model
-
-        Raises:
-            ModelNotFoundError: If model not found
         """
         if model_name in DEFAULT_MODELS:
             return DEFAULT_MODELS[model_name]
@@ -366,7 +363,19 @@ class AsyncLLMClient:
             if config.name == model_name:
                 return config
 
-        raise ModelNotFoundError(f"Unknown model: {model_name}")
+        # For unknown models (e.g., from OpenRouter), create a dynamic config
+        # This allows using any model available on OpenRouter
+        logger.info(f"Using dynamic config for model: {model_name}")
+        from twinscribe.config.models import ModelProvider, ModelTier
+        return ModelConfig(
+            name=model_name,
+            provider=ModelProvider.OPENROUTER,
+            tier=ModelTier.GENERATION,
+            cost_per_million_input=1.0,  # Default estimate
+            cost_per_million_output=2.0,  # Default estimate
+            max_tokens=4096,
+            context_window=128000,
+        )
 
     def _calculate_cost(
         self,
