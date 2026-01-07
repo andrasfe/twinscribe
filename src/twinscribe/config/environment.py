@@ -2,6 +2,9 @@
 Environment Variable Handling.
 
 Manages environment variables and secrets using python-dotenv.
+
+IMPORTANT: Call ensure_dotenv_loaded() early in application startup
+to ensure .env variables are available for Pydantic model defaults.
 """
 
 import os
@@ -9,6 +12,75 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from pydantic import BaseModel, Field, SecretStr
+
+
+# Track whether dotenv has been loaded
+_dotenv_loaded: bool = False
+
+
+def ensure_dotenv_loaded(env_file: str = ".env") -> bool:
+    """Ensure .env file is loaded into os.environ.
+
+    This function should be called EARLY in application startup,
+    BEFORE any Pydantic models with environment-dependent defaults
+    are instantiated.
+
+    Args:
+        env_file: Path to .env file (relative or absolute)
+
+    Returns:
+        True if .env was loaded successfully, False otherwise
+    """
+    global _dotenv_loaded
+
+    if _dotenv_loaded:
+        return True
+
+    try:
+        from dotenv import load_dotenv
+
+        # Try multiple locations for .env
+        env_paths = [
+            Path(env_file),  # Relative to cwd
+            Path.cwd() / env_file,  # Explicit cwd
+            Path(__file__).parent.parent.parent.parent / env_file,  # Project root
+        ]
+
+        for env_path in env_paths:
+            if env_path.exists():
+                load_dotenv(env_path, override=True)
+                _dotenv_loaded = True
+                return True
+
+        # No .env file found, that's okay - use defaults
+        _dotenv_loaded = True
+        return False
+
+    except ImportError:
+        # python-dotenv not installed
+        _dotenv_loaded = True
+        return False
+
+
+def get_env_model(
+    env_var: str,
+    default: str,
+) -> str:
+    """Get a model name from environment variable with fallback.
+
+    This function is meant to be called at module load time
+    to provide dynamic defaults for Pydantic model fields.
+
+    Args:
+        env_var: Environment variable name (e.g., "STREAM_A_DOCUMENTER_MODEL")
+        default: Default value if env var is not set
+
+    Returns:
+        Model name from environment or default
+    """
+    # Ensure dotenv is loaded first
+    ensure_dotenv_loaded()
+    return os.environ.get(env_var, default)
 
 
 class EnvironmentConfig(BaseModel):
@@ -99,25 +171,21 @@ class EnvironmentLoader:
     def load(self) -> bool:
         """Load environment variables from .env file.
 
-        Uses python-dotenv to load variables.
+        Uses the global ensure_dotenv_loaded() function which respects
+        the _dotenv_loaded flag to prevent double-loading in tests.
 
         Returns:
             True if loaded successfully
         """
         try:
-            from dotenv import load_dotenv
-
-            env_path = Path(self.env_file)
-            if env_path.exists():
-                load_dotenv(env_path)
-                self.loaded = True
-                return True
-            else:
-                self.errors.append(f".env file not found: {self.env_file}")
-                return False
-        except ImportError:
-            self.errors.append("python-dotenv not installed")
-            return False
+            # Use ensure_dotenv_loaded() to respect the global flag
+            # This prevents reloading .env during tests
+            self.loaded = ensure_dotenv_loaded(self.env_file)
+            if not self.loaded:
+                env_path = Path(self.env_file)
+                if not env_path.exists():
+                    self.errors.append(f".env file not found: {self.env_file}")
+            return self.loaded
         except Exception as e:
             self.errors.append(f"Error loading .env: {e}")
             return False
@@ -161,6 +229,9 @@ def load_environment(env_file: str = ".env") -> EnvironmentConfig:
         EnvironmentConfig with loaded values
     """
     global _loader, _config
+
+    # Ensure dotenv is loaded first (idempotent)
+    ensure_dotenv_loaded(env_file)
 
     if _loader is None or _loader.env_file != env_file:
         _loader = EnvironmentLoader(env_file=env_file)
@@ -228,6 +299,7 @@ def reset_environment() -> None:
 
     Useful for testing or reloading after .env changes.
     """
-    global _loader, _config
+    global _loader, _config, _dotenv_loaded
     _loader = None
     _config = None
+    _dotenv_loaded = False

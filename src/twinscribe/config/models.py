@@ -3,13 +3,24 @@ Configuration Data Models.
 
 Defines all configuration schemas using Pydantic for validation
 and type safety.
+
+IMPORTANT: Environment variables from .env are loaded at module import time
+to ensure they are available for Pydantic model defaults.
 """
 
+import os
 from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+# Load .env BEFORE defining any models with environment-dependent defaults
+# This import triggers dotenv loading via ensure_dotenv_loaded()
+from twinscribe.config.environment import ensure_dotenv_loaded, get_env_model
+
+# Ensure dotenv is loaded at module import time
+ensure_dotenv_loaded()
 
 
 class ModelProvider(str, Enum):
@@ -232,8 +243,48 @@ class StreamModelsConfig(BaseModel):
     )
 
 
+# Default fallback model names (used only if env vars are not set)
+_DEFAULT_STREAM_A_DOCUMENTER = "claude-3.5-sonnet"
+_DEFAULT_STREAM_A_VALIDATOR = "claude-3.5-haiku"
+_DEFAULT_STREAM_B_DOCUMENTER = "gpt-4o"
+_DEFAULT_STREAM_B_VALIDATOR = "gpt-4o-mini"
+_DEFAULT_COMPARATOR = "claude-opus-4"
+
+
+def _get_stream_a_documenter() -> str:
+    """Get Stream A documenter model from environment."""
+    return get_env_model("STREAM_A_DOCUMENTER_MODEL", _DEFAULT_STREAM_A_DOCUMENTER)
+
+
+def _get_stream_a_validator() -> str:
+    """Get Stream A validator model from environment."""
+    return get_env_model("STREAM_A_VALIDATOR_MODEL", _DEFAULT_STREAM_A_VALIDATOR)
+
+
+def _get_stream_b_documenter() -> str:
+    """Get Stream B documenter model from environment."""
+    return get_env_model("STREAM_B_DOCUMENTER_MODEL", _DEFAULT_STREAM_B_DOCUMENTER)
+
+
+def _get_stream_b_validator() -> str:
+    """Get Stream B validator model from environment."""
+    return get_env_model("STREAM_B_VALIDATOR_MODEL", _DEFAULT_STREAM_B_VALIDATOR)
+
+
+def _get_comparator() -> str:
+    """Get comparator model from environment."""
+    return get_env_model("COMPARATOR_MODEL", _DEFAULT_COMPARATOR)
+
+
 class ModelsConfig(BaseModel):
     """Model configuration for all agents.
+
+    Model names are read from environment variables with fallback to defaults:
+    - STREAM_A_DOCUMENTER_MODEL -> stream_a.documenter
+    - STREAM_A_VALIDATOR_MODEL -> stream_a.validator
+    - STREAM_B_DOCUMENTER_MODEL -> stream_b.documenter
+    - STREAM_B_VALIDATOR_MODEL -> stream_b.validator
+    - COMPARATOR_MODEL -> comparator
 
     Attributes:
         stream_a: Stream A model configuration
@@ -244,20 +295,20 @@ class ModelsConfig(BaseModel):
 
     stream_a: StreamModelsConfig = Field(
         default_factory=lambda: StreamModelsConfig(
-            documenter="claude-3.5-sonnet",
-            validator="claude-3.5-haiku",
+            documenter=_get_stream_a_documenter(),
+            validator=_get_stream_a_validator(),
         ),
         description="Stream A models",
     )
     stream_b: StreamModelsConfig = Field(
         default_factory=lambda: StreamModelsConfig(
-            documenter="gpt-4o",
-            validator="gpt-4o-mini",
+            documenter=_get_stream_b_documenter(),
+            validator=_get_stream_b_validator(),
         ),
         description="Stream B models",
     )
     comparator: str = Field(
-        default="claude-opus-4",
+        default_factory=_get_comparator,
         description="Comparator model",
     )
     custom_models: dict[str, ModelConfig] = Field(
@@ -268,22 +319,59 @@ class ModelsConfig(BaseModel):
     def get_model_config(self, model_name: str) -> ModelConfig:
         """Get configuration for a model by name.
 
+        For known models in custom_models or DEFAULT_MODELS, returns the
+        predefined configuration. For unknown models (e.g., from .env),
+        creates a dynamic configuration with reasonable defaults.
+
         Args:
             model_name: Model name or alias
 
         Returns:
-            Model configuration
-
-        Raises:
-            KeyError: If model not found
+            Model configuration (predefined or dynamically created)
         """
         # Check custom models first
         if model_name in self.custom_models:
             return self.custom_models[model_name]
+
         # Then check defaults
         if model_name in DEFAULT_MODELS:
             return DEFAULT_MODELS[model_name]
-        raise KeyError(f"Unknown model: {model_name}")
+
+        # For unknown models (e.g., from .env), create a dynamic config
+        # Infer tier from context - this is used for cost tracking
+        return self._create_dynamic_model_config(model_name)
+
+    def _create_dynamic_model_config(self, model_name: str) -> ModelConfig:
+        """Create a dynamic ModelConfig for an unknown model.
+
+        This allows using arbitrary model names from .env without
+        requiring them to be predefined in DEFAULT_MODELS.
+
+        Args:
+            model_name: The model name/identifier
+
+        Returns:
+            A ModelConfig with reasonable defaults
+        """
+        # Determine tier based on where this model is used
+        tier = ModelTier.GENERATION  # Default to generation tier
+
+        # Check if this model matches any of our configured models
+        if model_name == self.comparator:
+            tier = ModelTier.ARBITRATION
+        elif model_name in (self.stream_a.validator, self.stream_b.validator):
+            tier = ModelTier.VALIDATION
+
+        return ModelConfig(
+            name=model_name,
+            provider=ModelProvider.OPENROUTER,  # Default to OpenRouter
+            tier=tier,
+            cost_per_million_input=0.0,  # Unknown cost
+            cost_per_million_output=0.0,  # Unknown cost
+            max_tokens=4096,
+            temperature=0.0,
+            context_window=128000,
+        )
 
 
 class ConvergenceConfig(BaseModel):

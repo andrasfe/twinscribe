@@ -11,8 +11,11 @@ This module provides configuration management including:
 
 from twinscribe.config.environment import (
     EnvironmentConfig,
+    ensure_dotenv_loaded,
     get_api_key,
+    get_env_model,
     load_environment,
+    reset_environment,
 )
 from twinscribe.config.loader import (
     CONFIG_ENV_VAR,
@@ -99,5 +102,8 @@ __all__ = [
     # Environment
     "EnvironmentConfig",
     "load_environment",
+    "ensure_dotenv_loaded",
+    "get_env_model",
     "get_api_key",
+    "reset_environment",
 ]

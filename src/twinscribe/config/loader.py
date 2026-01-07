@@ -3,6 +3,9 @@ Configuration Loader.
 
 Loads and validates configuration from YAML files with environment
 variable substitution.
+
+IMPORTANT: Environment variables are loaded from .env at import time
+to ensure they are available for Pydantic model defaults.
 """
 
 import os
@@ -13,8 +16,11 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
-from twinscribe.config.environment import load_environment
+from twinscribe.config.environment import ensure_dotenv_loaded, load_environment
 from twinscribe.config.models import TwinscribeConfig
+
+# Ensure dotenv is loaded before any config parsing happens
+ensure_dotenv_loaded()
 
 # Default configuration file locations
 DEFAULT_CONFIG_PATHS = [

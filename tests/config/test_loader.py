@@ -21,15 +21,75 @@ from twinscribe.config import (
     load_config_from_env,
     reload_config,
     reset_config,
+    reset_environment,
 )
 
 
+# List of ALL environment variables that may affect config tests
+# This includes both .env vars and TWINSCRIBE_* overrides
+# IMPORTANT: ALL vars in ENV_VAR_OVERRIDES must be cleared to prevent
+# .env values from overriding test-specific values
+_ENV_VARS_FROM_DOTENV = [
+    # Model configuration
+    "STREAM_A_DOCUMENTER_MODEL",
+    "STREAM_A_VALIDATOR_MODEL",
+    "STREAM_B_DOCUMENTER_MODEL",
+    "STREAM_B_VALIDATOR_MODEL",
+    "COMPARATOR_MODEL",
+    "TWINSCRIBE_MODEL_PROVIDER",
+    "TWINSCRIBE_STREAM_A_DOCUMENTER",
+    "TWINSCRIBE_STREAM_A_VALIDATOR",
+    "TWINSCRIBE_STREAM_B_DOCUMENTER",
+    "TWINSCRIBE_STREAM_B_VALIDATOR",
+    "TWINSCRIBE_COMPARATOR",
+    # Convergence settings
+    "MAX_ITERATIONS",
+    "CALL_GRAPH_MATCH_THRESHOLD",
+    "DOCUMENTATION_SIMILARITY_THRESHOLD",
+    "TWINSCRIBE_MAX_ITERATIONS",
+    "TWINSCRIBE_CONVERGENCE_THRESHOLD",
+    # Output settings
+    "OUTPUT_DIR",
+    "TWINSCRIBE_OUTPUT_DIR",
+    # Logging settings
+    "LOG_LEVEL",
+    "TWINSCRIBE_LOG_LEVEL",
+    "TWINSCRIBE_LOG_FILE",
+    # Debug/runtime flags
+    "TWINSCRIBE_DEBUG",
+    "TWINSCRIBE_DRY_RUN",
+]
+
+
 @pytest.fixture(autouse=True)
-def reset_global_config():
-    """Reset global config before and after each test."""
+def reset_global_config(monkeypatch):
+    """Reset global config and environment before and after each test.
+
+    This ensures tests are isolated from:
+    1. Previous test state
+    2. Values loaded from .env file
+    """
+    import twinscribe.config.environment as env_module
+    import twinscribe.config.models as models_module
+
+    # Reset environment state
     reset_config()
+    reset_environment()
+
+    # Remove ALL env vars that could have been loaded from .env
+    # Using monkeypatch ensures they're restored after each test
+    for var in _ENV_VARS_FROM_DOTENV:
+        monkeypatch.delenv(var, raising=False)
+
+    # CRITICAL: Prevent ensure_dotenv_loaded() from reloading .env during tests
+    # by marking it as already loaded (tests will set their own env vars)
+    monkeypatch.setattr(env_module, "_dotenv_loaded", True)
+
     yield
+
+    # Clean up after test
     reset_config()
+    reset_environment()
 
 
 @pytest.fixture

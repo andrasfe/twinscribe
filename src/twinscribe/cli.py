@@ -749,41 +749,96 @@ def _display_analysis_summary(result: dict) -> None:
 
 @main.command()
 def models() -> None:
-    """List available LLM models and their tiers."""
+    """List configured LLM models and their tiers."""
+    from twinscribe.config import ensure_dotenv_loaded
+    from twinscribe.config.models import ModelsConfig
+
+    # Ensure .env is loaded
+    ensure_dotenv_loaded()
+
+    # Get the configured models (reads from environment)
+    models_config = ModelsConfig()
+
     console.print(
         Panel(
-            "[bold blue]TwinScribe Model Configuration[/bold blue]",
+            "[bold blue]TwinScribe Model Configuration[/bold blue]\n"
+            "[dim]Models are configured via .env or environment variables[/dim]",
             title="Models",
         )
     )
 
-    # Generation tier
-    gen_table = Table(title="Generation Tier (~$3/M tokens)", show_header=True)
+    # Helper to detect provider from model name
+    def get_provider(model_name: str) -> str:
+        if "claude" in model_name.lower():
+            return "Anthropic"
+        elif "gpt" in model_name.lower() or "o1" in model_name.lower():
+            return "OpenAI"
+        elif "gemini" in model_name.lower():
+            return "Google"
+        elif "deepseek" in model_name.lower():
+            return "DeepSeek"
+        elif "grok" in model_name.lower():
+            return "xAI"
+        elif "glm" in model_name.lower():
+            return "Zhipu AI"
+        elif "minimax" in model_name.lower():
+            return "MiniMax"
+        return "OpenRouter"
+
+    # Generation tier (Documenters)
+    gen_table = Table(title="Generation Tier (Documenters)", show_header=True)
     gen_table.add_column("Stream", style="cyan")
     gen_table.add_column("Model", style="green")
     gen_table.add_column("Provider", style="dim")
-    gen_table.add_row("Stream A", "claude-sonnet-4-5-20250929", "Anthropic")
-    gen_table.add_row("Stream B", "gpt-4o", "OpenAI")
+    gen_table.add_row(
+        "Stream A",
+        models_config.stream_a.documenter,
+        get_provider(models_config.stream_a.documenter),
+    )
+    gen_table.add_row(
+        "Stream B",
+        models_config.stream_b.documenter,
+        get_provider(models_config.stream_b.documenter),
+    )
     console.print(gen_table)
     console.print()
 
     # Validation tier
-    val_table = Table(title="Validation Tier (~$0.20/M tokens)", show_header=True)
+    val_table = Table(title="Validation Tier (Validators)", show_header=True)
     val_table.add_column("Stream", style="cyan")
     val_table.add_column("Model", style="green")
     val_table.add_column("Provider", style="dim")
-    val_table.add_row("Stream A", "claude-haiku-4-5-20251001", "Anthropic")
-    val_table.add_row("Stream B", "gpt-4o-mini", "OpenAI")
+    val_table.add_row(
+        "Stream A",
+        models_config.stream_a.validator,
+        get_provider(models_config.stream_a.validator),
+    )
+    val_table.add_row(
+        "Stream B",
+        models_config.stream_b.validator,
+        get_provider(models_config.stream_b.validator),
+    )
     console.print(val_table)
     console.print()
 
     # Arbitration tier
-    arb_table = Table(title="Arbitration Tier (~$15/M tokens)", show_header=True)
+    arb_table = Table(title="Arbitration Tier (Comparator)", show_header=True)
     arb_table.add_column("Role", style="cyan")
     arb_table.add_column("Model", style="green")
     arb_table.add_column("Provider", style="dim")
-    arb_table.add_row("Comparator", "claude-opus-4-5-20251101", "Anthropic")
+    arb_table.add_row(
+        "Comparator",
+        models_config.comparator,
+        get_provider(models_config.comparator),
+    )
     console.print(arb_table)
+
+    # Show environment variables hint
+    console.print()
+    console.print("[dim]Configure models via environment variables:[/dim]")
+    console.print("[dim]  STREAM_A_DOCUMENTER_MODEL, STREAM_A_VALIDATOR_MODEL[/dim]")
+    console.print("[dim]  STREAM_B_DOCUMENTER_MODEL, STREAM_B_VALIDATOR_MODEL[/dim]")
+    console.print("[dim]  COMPARATOR_MODEL[/dim]")
 
 
 @main.command()

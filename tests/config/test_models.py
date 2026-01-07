@@ -1,8 +1,11 @@
 """Tests for configuration models."""
 
+import os
+
 import pytest
 from pydantic import ValidationError
 
+from twinscribe.config import reset_environment
 from twinscribe.config.models import (
     DEFAULT_MODELS,
     BeadsConfig,
@@ -22,6 +25,38 @@ from twinscribe.config.models import (
     VerificationConfig,
     VerificationStrategy,
 )
+
+
+# List of environment variables that may be set by .env file and affect tests
+_ENV_VARS_FROM_DOTENV = [
+    "STREAM_A_DOCUMENTER_MODEL",
+    "STREAM_A_VALIDATOR_MODEL",
+    "STREAM_B_DOCUMENTER_MODEL",
+    "STREAM_B_VALIDATOR_MODEL",
+    "COMPARATOR_MODEL",
+]
+
+
+@pytest.fixture(autouse=True)
+def reset_env_for_models(monkeypatch):
+    """Reset environment before and after each test.
+
+    This ensures tests are isolated from values loaded from .env file.
+    """
+    import twinscribe.config.environment as env_module
+
+    reset_environment()
+
+    # Remove ALL env vars that could have been loaded from .env
+    for var in _ENV_VARS_FROM_DOTENV:
+        monkeypatch.delenv(var, raising=False)
+
+    # CRITICAL: Prevent ensure_dotenv_loaded() from reloading .env during tests
+    monkeypatch.setattr(env_module, "_dotenv_loaded", True)
+
+    yield
+
+    reset_environment()
 
 
 class TestCodebaseConfig:
@@ -162,11 +197,18 @@ class TestModelsConfig:
         assert model.name == "custom-override"
 
     def test_get_model_config_unknown(self):
-        """Test getting unknown model raises KeyError."""
+        """Test getting unknown model returns dynamic config.
+
+        Unknown models (e.g., from .env) now return a dynamically
+        created ModelConfig instead of raising KeyError.
+        """
         config = ModelsConfig()
 
-        with pytest.raises(KeyError):
-            config.get_model_config("nonexistent-model")
+        # Unknown models now return a dynamic config
+        model = config.get_model_config("my-custom-openrouter-model")
+        assert model.name == "my-custom-openrouter-model"
+        assert model.provider == ModelProvider.OPENROUTER
+        assert model.tier == ModelTier.GENERATION  # Default tier
 
 
 class TestConvergenceConfig:
@@ -314,24 +356,31 @@ class TestTwinscribeConfig:
         assert config.dry_run is True
 
     def test_model_validation(self):
-        """Test that model references are validated."""
+        """Test that model references are validated.
+
+        Unknown models now create dynamic configs instead of raising errors,
+        allowing arbitrary model names from .env to be used.
+        """
         # Valid configuration with default models
         TwinscribeConfig(
             codebase=CodebaseConfig(path="/my/codebase"),
         )
 
-        # Invalid configuration with unknown model raises KeyError
-        # (from model_validator which calls get_model_config)
-        with pytest.raises(KeyError, match="Unknown model"):
-            TwinscribeConfig(
-                codebase=CodebaseConfig(path="/my/codebase"),
-                models=ModelsConfig(
-                    stream_a=StreamModelsConfig(
-                        documenter="nonexistent-model",
-                        validator="claude-haiku-4-5",
-                    ),
+        # Configuration with custom/unknown models now works
+        # (models from .env like "x-ai/grok-4-fast" are supported)
+        config = TwinscribeConfig(
+            codebase=CodebaseConfig(path="/my/codebase"),
+            models=ModelsConfig(
+                stream_a=StreamModelsConfig(
+                    documenter="custom-openrouter-model",
+                    validator="another-custom-model",
                 ),
-            )
+            ),
+        )
+        # Verify the model config was created dynamically
+        model = config.models.get_model_config("custom-openrouter-model")
+        assert model.name == "custom-openrouter-model"
+        assert model.provider == ModelProvider.OPENROUTER
 
     def test_to_yaml_dict(self):
         """Test to_yaml_dict method."""

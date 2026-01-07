@@ -244,11 +244,17 @@ class TestAsyncLLMClient:
         assert config.name == "claude-3-5-sonnet-20241022"
 
     def test_get_model_config_unknown(self):
-        """Test getting unknown model configuration."""
+        """Test getting unknown model configuration.
+
+        Unknown models now return a dynamically created config
+        instead of raising ModelNotFoundError.
+        """
         client = AsyncLLMClient(api_key="test-key")
 
-        with pytest.raises(ModelNotFoundError):
-            client._get_model_config("unknown-model")
+        # Unknown models get a dynamic config for OpenRouter
+        config = client._get_model_config("unknown-model")
+        assert config.name == "unknown-model"
+        assert config.provider.value == "openrouter"
 
     def test_calculate_cost(self):
         """Test cost calculation."""
