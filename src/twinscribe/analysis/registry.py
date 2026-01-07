@@ -5,7 +5,8 @@ Manages registration and lookup of analyzer implementations.
 Supports plugin-style extension for adding new analyzers.
 """
 
-from typing import Callable, Optional, Type
+from collections.abc import Callable
+from typing import Optional
 
 from twinscribe.analysis.analyzer import (
     Analyzer,
@@ -13,7 +14,6 @@ from twinscribe.analysis.analyzer import (
     AnalyzerType,
     Language,
 )
-
 
 # Type alias for analyzer factory function
 AnalyzerFactory = Callable[[AnalyzerConfig], Analyzer]
@@ -39,7 +39,7 @@ class AnalyzerRegistry:
     """
 
     _instance: Optional["AnalyzerRegistry"] = None
-    _analyzers: dict[AnalyzerType, Type[Analyzer] | AnalyzerFactory]
+    _analyzers: dict[AnalyzerType, type[Analyzer] | AnalyzerFactory]
     _language_defaults: dict[Language, AnalyzerType]
 
     def __new__(cls) -> "AnalyzerRegistry":
@@ -53,8 +53,8 @@ class AnalyzerRegistry:
     def register(
         self,
         analyzer_type: AnalyzerType,
-        implementation: Type[Analyzer] | AnalyzerFactory,
-        default_for_language: Optional[Language] = None,
+        implementation: type[Analyzer] | AnalyzerFactory,
+        default_for_language: Language | None = None,
     ) -> None:
         """Register an analyzer implementation.
 
@@ -89,7 +89,7 @@ class AnalyzerRegistry:
     def get(
         self,
         analyzer_type: AnalyzerType,
-        config: Optional[AnalyzerConfig] = None,
+        config: AnalyzerConfig | None = None,
     ) -> Analyzer:
         """Get an analyzer instance.
 
@@ -121,7 +121,7 @@ class AnalyzerRegistry:
     def get_for_language(
         self,
         language: Language,
-        config: Optional[AnalyzerConfig] = None,
+        config: AnalyzerConfig | None = None,
     ) -> Analyzer:
         """Get the default analyzer for a language.
 
@@ -230,8 +230,8 @@ _registry = AnalyzerRegistry()
 
 def register_analyzer(
     analyzer_type: AnalyzerType,
-    implementation: Type[Analyzer] | AnalyzerFactory,
-    default_for_language: Optional[Language] = None,
+    implementation: type[Analyzer] | AnalyzerFactory,
+    default_for_language: Language | None = None,
 ) -> None:
     """Register an analyzer with the global registry.
 
@@ -247,7 +247,7 @@ def register_analyzer(
 
 def get_analyzer(
     analyzer_type: AnalyzerType,
-    config: Optional[AnalyzerConfig] = None,
+    config: AnalyzerConfig | None = None,
 ) -> Analyzer:
     """Get an analyzer from the global registry.
 

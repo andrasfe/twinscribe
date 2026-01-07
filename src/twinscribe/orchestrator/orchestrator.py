@@ -10,10 +10,11 @@ Main orchestrator that coordinates the entire documentation pipeline:
 """
 
 import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -77,7 +78,7 @@ class OrchestratorState:
     converged_components: int = 0
     pending_discrepancies: int = 0
     beads_tickets_open: int = 0
-    start_time: Optional[datetime] = None
+    start_time: datetime | None = None
     errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -175,9 +176,10 @@ class DualStreamOrchestrator:
         self._progress_callbacks: list[ProgressCallback] = []
 
         # Component tracking
-        self._components: list["Component"] = []
+        self._components: list[Component] = []
         self._processing_order: list[str] = []
-        self._component_results: dict[str, "ComponentFinalDoc"] = {}
+        self._component_results: dict[str, ComponentFinalDoc] = {}
+        self._source_code_map: dict[str, str] = {}  # component_id -> source code
 
     @property
     def config(self) -> OrchestratorConfig:
@@ -281,16 +283,42 @@ class DualStreamOrchestrator:
     async def _discover_components(self) -> list["Component"]:
         """Discover all documentable components.
 
+        Uses AST parsing to find all functions, methods, and classes
+        in the codebase. The call graph from the oracle is used to
+        compute processing order (dependencies before dependents).
+
         Returns:
             List of components to document
         """
-        # This would use AST parsing to find functions, methods, classes
-        # Implementation depends on codebase analysis module
-        from twinscribe.models import Component
+        from twinscribe.analysis.component_discovery import ComponentDiscovery
 
-        # Placeholder - actual implementation would parse the codebase
-        # For now, return empty list (to be implemented by codebase module)
-        return []
+        # Get the codebase path from the oracle
+        codebase_path = self._oracle.codebase_path
+
+        # Create component discovery with default settings
+        discovery = ComponentDiscovery(
+            codebase_path=codebase_path,
+            include_private=False,  # Only public components by default
+        )
+
+        # Get the call graph from the oracle for topological ordering
+        call_graph = self._oracle.call_graph
+
+        # Discover components
+        result = await discovery.discover(call_graph=call_graph)
+
+        # Store source code map for later use by streams
+        self._source_code_map = result.source_code_map
+
+        # Store processing order
+        self._processing_order = result.processing_order
+
+        # Log discovery results
+        if result.errors:
+            for error in result.errors:
+                self._state.errors.append(error)
+
+        return result.components
 
     def _build_processing_order(self) -> list[str]:
         """Build topological processing order.
@@ -308,7 +336,7 @@ class DualStreamOrchestrator:
         in_degree: dict[str, int] = {}
         adjacency: dict[str, list[str]] = {}
 
-        component_ids = {c.id for c in self._components}
+        component_ids = {c.component_id for c in self._components}
 
         for comp_id in component_ids:
             in_degree[comp_id] = 0
@@ -413,23 +441,19 @@ class DualStreamOrchestrator:
         beads_tickets_created = 0
 
         for discrepancy in comparison.discrepancies:
-            if discrepancy.resolution_source == "ground_truth":
+            if discrepancy.is_call_graph_related and discrepancy.ground_truth is not None:
                 # Apply ground truth resolution
                 await self._apply_ground_truth_resolution(discrepancy)
                 resolved_by_ground_truth += 1
 
-            elif discrepancy.requires_human_review and self._beads_manager:
+            elif discrepancy.requires_beads and self._beads_manager:
                 # Create Beads ticket
                 if not self._config.dry_run:
                     await self._create_beads_ticket(discrepancy)
                     beads_tickets_created += 1
 
         # Wait for Beads resolution if configured
-        if (
-            beads_tickets_created > 0
-            and self._config.wait_for_beads
-            and self._beads_manager
-        ):
+        if beads_tickets_created > 0 and self._config.wait_for_beads and self._beads_manager:
             await self._wait_for_beads_resolution()
 
         # Step 4: Check convergence
@@ -443,9 +467,9 @@ class DualStreamOrchestrator:
             beads_tickets_created=beads_tickets_created,
             converged=converged,
             metrics={
-                "identical_components": comparison.summary.identical_count,
-                "call_graph_match_rate": comparison.summary.call_graph_match_rate,
-                "documentation_similarity": comparison.summary.documentation_similarity,
+                "identical_components": comparison.summary.identical,
+                "call_graph_match_rate": comparison.summary.agreement_rate,
+                "documentation_similarity": comparison.summary.agreement_rate,
             },
         )
 
@@ -475,17 +499,34 @@ class DualStreamOrchestrator:
         Args:
             discrepancy: Discrepancy to resolve
         """
-        if discrepancy.resolution == "accept_a":
+        from twinscribe.models.base import ResolutionAction
+
+        # Determine field from discrepancy type
+        field = discrepancy.type.value
+
+        if discrepancy.resolution == ResolutionAction.ACCEPT_STREAM_A:
             await self._stream_b.apply_correction(
                 discrepancy.component_id,
-                discrepancy.field,
+                field,
                 discrepancy.stream_a_value,
             )
-        elif discrepancy.resolution == "accept_b":
+        elif discrepancy.resolution == ResolutionAction.ACCEPT_STREAM_B:
             await self._stream_a.apply_correction(
                 discrepancy.component_id,
-                discrepancy.field,
+                field,
                 discrepancy.stream_b_value,
+            )
+        elif discrepancy.resolution == ResolutionAction.ACCEPT_GROUND_TRUTH:
+            # Apply ground truth to both streams
+            await self._stream_a.apply_correction(
+                discrepancy.component_id,
+                field,
+                discrepancy.ground_truth,
+            )
+            await self._stream_b.apply_correction(
+                discrepancy.component_id,
+                field,
+                discrepancy.ground_truth,
             )
 
     async def _create_beads_ticket(self, discrepancy: "Discrepancy") -> str:
@@ -499,20 +540,26 @@ class DualStreamOrchestrator:
         """
         from twinscribe.beads import DiscrepancyTemplateData
 
+        # Look up component info for additional context
+        component = next(
+            (c for c in self._components if c.component_id == discrepancy.component_id),
+            None,
+        )
+        component_type = component.type.value if component else "unknown"
+        file_path = component.location.file_path if component else ""
+
         data = DiscrepancyTemplateData(
-            discrepancy_id=discrepancy.id,
+            discrepancy_id=discrepancy.discrepancy_id,
             component_name=discrepancy.component_id,
-            component_type=discrepancy.component_type,
-            file_path=discrepancy.file_path,
+            component_type=component_type,
+            file_path=file_path,
             discrepancy_type=discrepancy.type.value,
             stream_a_value=str(discrepancy.stream_a_value),
             stream_b_value=str(discrepancy.stream_b_value),
             static_analysis_value=(
-                str(discrepancy.ground_truth_value)
-                if discrepancy.ground_truth_value
-                else None
+                str(discrepancy.ground_truth) if discrepancy.ground_truth is not None else None
             ),
-            context=discrepancy.context or "",
+            context="",
             iteration=self._state.iteration,
         )
 
@@ -591,12 +638,8 @@ class DualStreamOrchestrator:
         # Additional checks
         summary = comparison.summary
 
-        # Check call graph match rate
-        if summary.call_graph_match_rate < 0.98:
-            return False
-
-        # Check documentation similarity
-        if summary.documentation_similarity < 0.95:
+        # Check agreement rate
+        if summary.agreement_rate < 0.95:
             return False
 
         # Check blocking discrepancies
@@ -615,7 +658,7 @@ class DualStreamOrchestrator:
         Returns:
             Final documentation package
         """
-        from twinscribe.models import DocumentationPackage, ConvergenceReport
+        from twinscribe.models import DocumentationPackage
 
         # Merge outputs from both streams
         final_docs = await self._merge_outputs()
@@ -631,10 +674,16 @@ class DualStreamOrchestrator:
         # Generate convergence report
         convergence_report = self._generate_convergence_report(converged)
 
+        # Convert list to dict for DocumentationPackage
+        docs_dict = {doc.component_id: doc for doc in final_docs}
+
+        # Convert rebuild_tickets to list of dicts
+        rebuild_ticket_dicts = [{"ticket_key": t} for t in rebuild_tickets]
+
         return DocumentationPackage(
-            components=final_docs,
+            documentation=docs_dict,
             call_graph=final_call_graph,
-            rebuild_tickets=rebuild_tickets,
+            rebuild_tickets=rebuild_ticket_dicts,
             convergence_report=convergence_report,
             metrics=self._calculate_final_metrics(),
         )
@@ -653,7 +702,7 @@ class DualStreamOrchestrator:
 
         merged = []
         for component in self._components:
-            comp_id = component.id
+            comp_id = component.component_id
 
             doc_a = output_a.get(comp_id)
             doc_b = output_b.get(comp_id)
@@ -662,33 +711,40 @@ class DualStreamOrchestrator:
             # For now, simple merge preferring A when identical
             if doc_a and doc_b:
                 # Use A as base, they should be converged
+                conf_a = doc_a.metadata.confidence if doc_a.metadata else 0.8
+                conf_b = doc_b.metadata.confidence if doc_b.metadata else 0.8
                 merged.append(
                     ComponentFinalDoc(
                         component_id=comp_id,
                         documentation=doc_a.documentation,
-                        call_graph=doc_a.call_graph,
-                        confidence=min(doc_a.confidence, doc_b.confidence),
-                        source_streams=["A", "B"],
+                        callers=[c.component_id for c in doc_a.call_graph.callers],
+                        callees=[c.component_id for c in doc_a.call_graph.callees],
+                        confidence_score=int(min(conf_a, conf_b) * 100),
+                        source_stream="merged",
                     )
                 )
             elif doc_a:
+                conf_a = doc_a.metadata.confidence if doc_a.metadata else 0.8
                 merged.append(
                     ComponentFinalDoc(
                         component_id=comp_id,
                         documentation=doc_a.documentation,
-                        call_graph=doc_a.call_graph,
-                        confidence=doc_a.confidence * 0.8,  # Lower confidence
-                        source_streams=["A"],
+                        callers=[c.component_id for c in doc_a.call_graph.callers],
+                        callees=[c.component_id for c in doc_a.call_graph.callees],
+                        confidence_score=int(conf_a * 80),  # Lower confidence
+                        source_stream="A",
                     )
                 )
             elif doc_b:
+                conf_b = doc_b.metadata.confidence if doc_b.metadata else 0.8
                 merged.append(
                     ComponentFinalDoc(
                         component_id=comp_id,
                         documentation=doc_b.documentation,
-                        call_graph=doc_b.call_graph,
-                        confidence=doc_b.confidence * 0.8,
-                        source_streams=["B"],
+                        callers=[c.component_id for c in doc_b.call_graph.callers],
+                        callees=[c.component_id for c in doc_b.call_graph.callees],
+                        confidence_score=int(conf_b * 80),
+                        source_stream="B",
                     )
                 )
 
@@ -706,12 +762,20 @@ class DualStreamOrchestrator:
         Returns:
             Merged call graph
         """
-        from twinscribe.models import CallGraph, CallEdge
+        from twinscribe.models.base import CallType
+        from twinscribe.models.call_graph import CallEdge, CallGraph
 
         edges = []
         for doc in docs:
-            for edge in doc.call_graph.edges:
-                edges.append(edge)
+            # Create edges from callers and callees
+            for callee_id in doc.callees:
+                edges.append(
+                    CallEdge(
+                        caller=doc.component_id,
+                        callee=callee_id,
+                        call_type=CallType.DIRECT,
+                    )
+                )
 
         return CallGraph(edges=edges)
 
@@ -732,17 +796,25 @@ class DualStreamOrchestrator:
         ticket_keys = []
 
         for priority, doc in enumerate(docs, start=1):
+            # Look up component info
+            component = next(
+                (c for c in self._components if c.component_id == doc.component_id),
+                None,
+            )
+            component_type = component.type.value if component else "component"
+            file_path = component.location.file_path if component else ""
+
             data = RebuildTemplateData(
                 component_name=doc.component_id,
-                component_type="component",  # Would get from actual component
-                file_path="",  # Would get from component
+                component_type=component_type,
+                file_path=file_path,
                 documentation=str(doc.documentation),
                 call_graph={
-                    "calls": [e.callee for e in doc.call_graph.edges],
-                    "called_by": [],  # Would need reverse lookup
+                    "calls": doc.callees,
+                    "called_by": doc.callers,
                 },
                 rebuild_priority=priority,
-                complexity_score=doc.complexity_score if hasattr(doc, "complexity_score") else 0.5,
+                complexity_score=0.5,
             )
 
             tracked = await self._beads_manager.create_rebuild_ticket(data)
@@ -759,7 +831,7 @@ class DualStreamOrchestrator:
         Returns:
             Convergence report
         """
-        from twinscribe.models import ConvergenceReport, ConvergenceHistoryEntry
+        from twinscribe.models import ConvergenceHistoryEntry, ConvergenceReport
 
         history = []
         for result in self._iteration_history:
@@ -781,22 +853,31 @@ class DualStreamOrchestrator:
             history=history,
         )
 
-    def _calculate_final_metrics(self) -> dict[str, Any]:
+    def _calculate_final_metrics(self) -> "RunMetrics":
         """Calculate final metrics.
 
         Returns:
-            Metrics dictionary
+            RunMetrics object
         """
-        elapsed = None
-        if self._state.start_time:
-            elapsed = (datetime.utcnow() - self._state.start_time).total_seconds()
+        from twinscribe.models.output import RunMetrics
 
-        return {
-            "total_components": self._state.total_components,
-            "total_iterations": self._state.iteration,
-            "elapsed_seconds": elapsed,
-            "errors_count": len(self._state.errors),
-        }
+        # Calculate totals from iteration history
+        total_discrepancies = sum(r.discrepancies_found for r in self._iteration_history)
+        auto_resolved = sum(r.discrepancies_resolved for r in self._iteration_history)
+        beads_resolved = sum(r.beads_tickets_created for r in self._iteration_history)
+
+        return RunMetrics(
+            run_id=f"run_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
+            codebase_path=str(self._oracle.codebase_path),
+            started_at=self._state.start_time or datetime.utcnow(),
+            completed_at=datetime.utcnow(),
+            components_total=self._state.total_components,
+            components_documented=self._state.processed_components,
+            discrepancies_total=total_discrepancies,
+            discrepancies_resolved_auto=auto_resolved,
+            discrepancies_resolved_beads=beads_resolved,
+            discrepancies_unresolved=self._state.pending_discrepancies,
+        )
 
 
 class OrchestratorError(Exception):

@@ -8,8 +8,9 @@ Tests cover:
 - StreamOutput model
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
 from pydantic import ValidationError
 
 from twinscribe.models.base import CallType, StreamId
@@ -18,8 +19,8 @@ from twinscribe.models.documentation import (
     CalleeRef,
     CallerRef,
     CallGraphSection,
-    DocumenterMetadata,
     DocumentationOutput,
+    DocumenterMetadata,
     StreamOutput,
 )
 

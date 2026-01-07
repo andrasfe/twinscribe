@@ -6,7 +6,6 @@ consistent component IDs across different tools.
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -27,7 +26,7 @@ class NormalizationConfig(BaseModel):
         normalize_case: Whether to normalize case for comparison
     """
 
-    strip_module_prefix: Optional[str] = Field(
+    strip_module_prefix: str | None = Field(
         default=None,
         description="Module prefix to strip from component IDs",
     )
@@ -55,20 +54,83 @@ class NormalizationConfig(BaseModel):
 
 # Known Python builtins to filter
 PYTHON_BUILTINS = {
-    "print", "len", "range", "str", "int", "float", "bool", "list", "dict",
-    "set", "tuple", "type", "isinstance", "issubclass", "hasattr", "getattr",
-    "setattr", "delattr", "callable", "iter", "next", "enumerate", "zip",
-    "map", "filter", "sorted", "reversed", "min", "max", "sum", "any", "all",
-    "abs", "round", "pow", "divmod", "open", "input", "format", "repr",
-    "hash", "id", "object", "super", "classmethod", "staticmethod", "property",
+    "print",
+    "len",
+    "range",
+    "str",
+    "int",
+    "float",
+    "bool",
+    "list",
+    "dict",
+    "set",
+    "tuple",
+    "type",
+    "isinstance",
+    "issubclass",
+    "hasattr",
+    "getattr",
+    "setattr",
+    "delattr",
+    "callable",
+    "iter",
+    "next",
+    "enumerate",
+    "zip",
+    "map",
+    "filter",
+    "sorted",
+    "reversed",
+    "min",
+    "max",
+    "sum",
+    "any",
+    "all",
+    "abs",
+    "round",
+    "pow",
+    "divmod",
+    "open",
+    "input",
+    "format",
+    "repr",
+    "hash",
+    "id",
+    "object",
+    "super",
+    "classmethod",
+    "staticmethod",
+    "property",
 }
 
 # Known Python stdlib modules to filter
 PYTHON_STDLIB_PREFIXES = {
-    "os.", "sys.", "re.", "json.", "datetime.", "collections.", "itertools.",
-    "functools.", "pathlib.", "typing.", "abc.", "logging.", "threading.",
-    "multiprocessing.", "asyncio.", "http.", "urllib.", "email.", "html.",
-    "xml.", "sqlite3.", "pickle.", "copy.", "math.", "random.", "statistics.",
+    "os.",
+    "sys.",
+    "re.",
+    "json.",
+    "datetime.",
+    "collections.",
+    "itertools.",
+    "functools.",
+    "pathlib.",
+    "typing.",
+    "abc.",
+    "logging.",
+    "threading.",
+    "multiprocessing.",
+    "asyncio.",
+    "http.",
+    "urllib.",
+    "email.",
+    "html.",
+    "xml.",
+    "sqlite3.",
+    "pickle.",
+    "copy.",
+    "math.",
+    "random.",
+    "statistics.",
 }
 
 
@@ -106,7 +168,7 @@ class CallGraphNormalizer:
     dotted module.Class.method notation.
     """
 
-    def __init__(self, config: Optional[NormalizationConfig] = None) -> None:
+    def __init__(self, config: NormalizationConfig | None = None) -> None:
         """Initialize the normalizer.
 
         Args:
@@ -153,7 +215,7 @@ class CallGraphNormalizer:
         self,
         raw_edge: RawCallEdge,
         analyzer_type: AnalyzerType,
-    ) -> Optional[CallEdge]:
+    ) -> CallEdge | None:
         """Normalize a single raw edge.
 
         Args:
@@ -190,7 +252,7 @@ class CallGraphNormalizer:
         self,
         raw_id: str,
         analyzer_type: AnalyzerType,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Normalize a component ID to standard format.
 
         Args:
@@ -223,7 +285,7 @@ class CallGraphNormalizer:
         if self._config.strip_module_prefix:
             prefix = self._config.strip_module_prefix
             if normalized.startswith(prefix):
-                normalized = normalized[len(prefix):]
+                normalized = normalized[len(prefix) :]
                 if normalized.startswith("."):
                     normalized = normalized[1:]
 
@@ -233,7 +295,7 @@ class CallGraphNormalizer:
 
         return normalized
 
-    def _normalize_pycg_id(self, raw_id: str) -> Optional[str]:
+    def _normalize_pycg_id(self, raw_id: str) -> str | None:
         """Normalize PyCG format to standard format.
 
         PyCG format: module.submodule.Class.method or module.function
@@ -247,7 +309,7 @@ class CallGraphNormalizer:
 
         return raw_id
 
-    def _normalize_pyan3_id(self, raw_id: str) -> Optional[str]:
+    def _normalize_pyan3_id(self, raw_id: str) -> str | None:
         """Normalize pyan3 format to standard format.
 
         pyan3 may use different notation depending on output format.
@@ -263,7 +325,7 @@ class CallGraphNormalizer:
 
         return normalized
 
-    def _normalize_java_id(self, raw_id: str) -> Optional[str]:
+    def _normalize_java_id(self, raw_id: str) -> str | None:
         """Normalize Java fully qualified name to standard format.
 
         Java format: com.package.Class.method(params)Returntype
@@ -280,7 +342,7 @@ class CallGraphNormalizer:
         # Java uses dots which is already standard
         return raw_id
 
-    def _normalize_ts_id(self, raw_id: str) -> Optional[str]:
+    def _normalize_ts_id(self, raw_id: str) -> str | None:
         """Normalize TypeScript/JavaScript format to standard format.
 
         TS format varies but typically includes file path and symbol.

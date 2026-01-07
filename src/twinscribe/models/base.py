@@ -27,12 +27,12 @@ class CallType(str, Enum):
     which affects documentation and dependency analysis.
     """
 
-    DIRECT = "direct"           # Simple function/method call
-    CONDITIONAL = "conditional" # Call within if/else branch
-    LOOP = "loop"               # Call within for/while loop
-    EXCEPTION = "exception"     # Call within try/except block
-    CALLBACK = "callback"       # Passed as callback/closure
-    DYNAMIC = "dynamic"         # Dynamic dispatch (getattr, etc.)
+    DIRECT = "direct"  # Simple function/method call
+    CONDITIONAL = "conditional"  # Call within if/else branch
+    LOOP = "loop"  # Call within for/while loop
+    EXCEPTION = "exception"  # Call within try/except block
+    CALLBACK = "callback"  # Passed as callback/closure
+    DYNAMIC = "dynamic"  # Dynamic dispatch (getattr, etc.)
 
 
 class DiscrepancyType(str, Enum):
@@ -42,28 +42,28 @@ class DiscrepancyType(str, Enum):
     """
 
     # Call graph related - can be resolved by static analysis
-    CALL_GRAPH_EDGE = "call_graph_edge"           # Missing/extra call edge
-    CALL_SITE_LINE = "call_site_line"             # Different line number
-    CALL_TYPE_MISMATCH = "call_type_mismatch"     # Different call type
+    CALL_GRAPH_EDGE = "call_graph_edge"  # Missing/extra call edge
+    CALL_SITE_LINE = "call_site_line"  # Different line number
+    CALL_TYPE_MISMATCH = "call_type_mismatch"  # Different call type
 
     # Documentation content - may require human review
     DOCUMENTATION_CONTENT = "documentation_content"  # Summary/description differs
     PARAMETER_DESCRIPTION = "parameter_description"  # Parameter doc differs
-    RETURN_DESCRIPTION = "return_description"        # Return doc differs
+    RETURN_DESCRIPTION = "return_description"  # Return doc differs
     EXCEPTION_DOCUMENTATION = "exception_documentation"  # Exception doc differs
 
     # Structural differences
-    MISSING_PARAMETER = "missing_parameter"       # One stream missing param doc
-    MISSING_EXCEPTION = "missing_exception"       # One stream missing exception doc
-    TYPE_ANNOTATION = "type_annotation"           # Type annotation differs
+    MISSING_PARAMETER = "missing_parameter"  # One stream missing param doc
+    MISSING_EXCEPTION = "missing_exception"  # One stream missing exception doc
+    TYPE_ANNOTATION = "type_annotation"  # Type annotation differs
 
 
 class ValidationStatus(str, Enum):
     """Result status from validation agent."""
 
-    PASS = "pass"         # All checks passed
-    FAIL = "fail"         # Critical validation failures
-    WARNING = "warning"   # Non-blocking issues found
+    PASS = "pass"  # All checks passed
+    FAIL = "fail"  # Critical validation failures
+    WARNING = "warning"  # Non-blocking issues found
 
 
 class ResolutionAction(str, Enum):
@@ -80,9 +80,9 @@ class ResolutionAction(str, Enum):
 class ModelTier(str, Enum):
     """Tier of model in the cost hierarchy."""
 
-    GENERATION = "generation"     # High-quality, mid-cost
-    VALIDATION = "validation"     # Fast, cheap
-    ARBITRATION = "arbitration"   # Premium, expensive
+    GENERATION = "generation"  # High-quality, mid-cost
+    VALIDATION = "validation"  # Fast, cheap
+    ARBITRATION = "arbitration"  # Premium, expensive
 
 
 class StreamId(str, Enum):

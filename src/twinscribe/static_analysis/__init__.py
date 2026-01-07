@@ -19,13 +19,13 @@ Supported Languages:
 """
 
 from twinscribe.static_analysis.oracle import (
-    StaticAnalysisOracle,
-    BaseAnalyzer,
-    PyCGAnalyzer,
-    Pyan3Analyzer,
     AnalyzerError,
-    AnalyzerNotAvailableError,
     AnalyzerExecutionError,
+    AnalyzerNotAvailableError,
+    BaseAnalyzer,
+    Pyan3Analyzer,
+    PyCGAnalyzer,
+    StaticAnalysisOracle,
 )
 
 __all__ = [

@@ -14,11 +14,11 @@ import tempfile
 from abc import ABC, abstractmethod
 from functools import cached_property
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-from twinscribe.config.models import AnalyzerType, Language
-from twinscribe.models.call_graph import CallEdge, CallGraph, CallGraphDiff
+from twinscribe.config.models import Language
 from twinscribe.models.base import CallType
+from twinscribe.models.call_graph import CallEdge, CallGraph, CallGraphDiff
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +50,9 @@ class BaseAnalyzer(ABC):
 
     def __init__(
         self,
-        executable: Optional[str] = None,
+        executable: str | None = None,
         timeout_seconds: int = 300,
-        extra_args: Optional[list[str]] = None,
+        extra_args: list[str] | None = None,
     ) -> None:
         """Initialize the analyzer.
 
@@ -89,7 +89,7 @@ class BaseAnalyzer(ABC):
     def _run_command(
         self,
         command: list[str],
-        cwd: Optional[str] = None,
+        cwd: str | None = None,
     ) -> tuple[str, str, int]:
         """Run a command and capture output.
 
@@ -131,9 +131,9 @@ class PyCGAnalyzer(BaseAnalyzer):
 
     def __init__(
         self,
-        executable: Optional[str] = None,
+        executable: str | None = None,
         timeout_seconds: int = 300,
-        extra_args: Optional[list[str]] = None,
+        extra_args: list[str] | None = None,
         max_iter: int = 5,
     ) -> None:
         """Initialize PyCG analyzer.
@@ -175,9 +175,7 @@ class PyCGAnalyzer(BaseAnalyzer):
             return CallGraph(source="pycg", edges=[])
 
         # Create output file
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as output_file:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as output_file:
             output_path = output_file.name
 
         try:
@@ -249,9 +247,9 @@ class Pyan3Analyzer(BaseAnalyzer):
 
     def __init__(
         self,
-        executable: Optional[str] = None,
+        executable: str | None = None,
         timeout_seconds: int = 300,
-        extra_args: Optional[list[str]] = None,
+        extra_args: list[str] | None = None,
     ) -> None:
         """Initialize pyan3 analyzer.
 
@@ -290,9 +288,7 @@ class Pyan3Analyzer(BaseAnalyzer):
             return CallGraph(source="pyan3", edges=[])
 
         # Create output file
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as output_file:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as output_file:
             output_path = output_file.name
 
         try:
@@ -376,7 +372,7 @@ class StaticAnalysisOracle:
         self,
         codebase_path: str,
         language: str | Language = Language.PYTHON,
-        analyzer_config: Optional[dict[str, Any]] = None,
+        analyzer_config: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the oracle.
 
@@ -397,19 +393,17 @@ class StaticAnalysisOracle:
             self.language = language
 
         self._config = analyzer_config or {}
-        self._call_graph: Optional[CallGraph] = None
+        self._call_graph: CallGraph | None = None
 
         # Initialize analyzers
-        self._primary_analyzer: Optional[BaseAnalyzer] = None
-        self._fallback_analyzer: Optional[BaseAnalyzer] = None
+        self._primary_analyzer: BaseAnalyzer | None = None
+        self._fallback_analyzer: BaseAnalyzer | None = None
         self._init_analyzers()
 
     def _init_analyzers(self) -> None:
         """Initialize analyzers based on language."""
         if self.language not in self._analyzers:
-            logger.warning(
-                f"No analyzer registered for {self.language}, using Python"
-            )
+            logger.warning(f"No analyzer registered for {self.language}, using Python")
             analyzer_classes = self._analyzers[Language.PYTHON]
         else:
             analyzer_classes = self._analyzers[self.language]
@@ -441,9 +435,7 @@ class StaticAnalysisOracle:
         # Try primary analyzer
         if self._primary_analyzer and self._primary_analyzer.is_available():
             try:
-                logger.info(
-                    f"Analyzing with {self._primary_analyzer.__class__.__name__}"
-                )
+                logger.info(f"Analyzing with {self._primary_analyzer.__class__.__name__}")
                 self._call_graph = self._primary_analyzer.analyze(self.codebase_path)
                 logger.info(
                     f"Extracted {self._call_graph.edge_count} edges "
@@ -456,9 +448,7 @@ class StaticAnalysisOracle:
         # Try fallback analyzer
         if self._fallback_analyzer and self._fallback_analyzer.is_available():
             try:
-                logger.info(
-                    f"Falling back to {self._fallback_analyzer.__class__.__name__}"
-                )
+                logger.info(f"Falling back to {self._fallback_analyzer.__class__.__name__}")
                 self._call_graph = self._fallback_analyzer.analyze(self.codebase_path)
                 logger.info(
                     f"Extracted {self._call_graph.edge_count} edges "

@@ -7,7 +7,7 @@ as specified in section 5 of the specification.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -25,9 +25,9 @@ class BeadsTicketType(str, Enum):
     """Types of Beads tickets created by the system."""
 
     CLARIFICATION = "Clarification"  # Discrepancy needing human review
-    STORY = "Story"                   # Rebuild ticket
-    BUG = "Bug"                       # Issue found in documentation
-    TASK = "Task"                     # Follow-up task
+    STORY = "Story"  # Rebuild ticket
+    BUG = "Bug"  # Issue found in documentation
+    TASK = "Task"  # Follow-up task
 
 
 class StreamComparison(BaseModel):
@@ -40,12 +40,8 @@ class StreamComparison(BaseModel):
     """
 
     aspect: str = Field(..., description="Aspect being compared")
-    stream_a_value: Optional[str] = Field(
-        default=None, description="Stream A value"
-    )
-    stream_b_value: Optional[str] = Field(
-        default=None, description="Stream B value"
-    )
+    stream_a_value: str | None = Field(default=None, description="Stream A value")
+    stream_b_value: str | None = Field(default=None, description="Stream B value")
 
 
 class DiscrepancyTicket(BaseModel):
@@ -94,27 +90,13 @@ class DiscrepancyTicket(BaseModel):
         max_length=255,
         description="Ticket summary",
     )
-    component_id: str = Field(
-        ..., description="Affected component ID"
-    )
-    file_path: str = Field(
-        ..., description="File path"
-    )
-    line_start: int = Field(
-        ..., ge=1, description="Start line"
-    )
-    line_end: int = Field(
-        ..., ge=1, description="End line"
-    )
-    iteration_number: int = Field(
-        default=1, ge=1, description="Iteration found"
-    )
-    stream_a_model: str = Field(
-        ..., description="Stream A model name"
-    )
-    stream_b_model: str = Field(
-        ..., description="Stream B model name"
-    )
+    component_id: str = Field(..., description="Affected component ID")
+    file_path: str = Field(..., description="File path")
+    line_start: int = Field(..., ge=1, description="Start line")
+    line_end: int = Field(..., ge=1, description="End line")
+    iteration_number: int = Field(default=1, ge=1, description="Iteration found")
+    stream_a_model: str = Field(..., description="Stream A model name")
+    stream_b_model: str = Field(..., description="Stream B model name")
     differences: list[StreamComparison] = Field(
         default_factory=list,
         description="Value comparisons",
@@ -123,7 +105,7 @@ class DiscrepancyTicket(BaseModel):
         default=False,
         description="Static analysis available",
     )
-    ground_truth_value: Optional[str] = Field(
+    ground_truth_value: str | None = Field(
         default=None,
         description="Static analysis value",
     )
@@ -143,13 +125,11 @@ class DiscrepancyTicket(BaseModel):
         default_factory=dict,
         description="Custom field values",
     )
-    discrepancy_id: str = Field(
-        ..., description="Internal discrepancy ID"
-    )
+    discrepancy_id: str = Field(..., description="Internal discrepancy ID")
     created_at: datetime = Field(
         default_factory=datetime.utcnow,
     )
-    ticket_key: Optional[str] = Field(
+    ticket_key: str | None = Field(
         default=None,
         description="Beads ticket key",
     )
@@ -174,7 +154,7 @@ class DiscrepancyTicket(BaseModel):
                 "summary": self.summary,
                 "description": description,
                 "labels": self.labels,
-                **{k: v for k, v in self.custom_fields.items()},
+                **dict(self.custom_fields.items()),
             }
         }
 
@@ -198,37 +178,41 @@ class DiscrepancyTicket(BaseModel):
             b_val = diff.stream_b_value or "_none_"
             lines.append(f"| {diff.aspect} | {a_val} | {b_val} |")
 
-        lines.extend([
-            "",
-            "## Ground Truth Reference",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Ground Truth Reference",
+                "",
+            ]
+        )
 
         if self.ground_truth_available:
             lines.append(f"Static analysis indicates: `{self.ground_truth_value}`")
         else:
             lines.append("No static analysis available for this discrepancy type.")
 
-        lines.extend([
-            "",
-            "## Source Code Context",
-            "",
-            f"```{self.language}",
-            self.source_code_snippet,
-            "```",
-            "",
-            "## Requested Action",
-            "",
-            "Please review and indicate which interpretation is correct:",
-            "- [ ] Stream A is correct",
-            "- [ ] Stream B is correct",
-            "- [ ] Both are partially correct (provide merged version)",
-            "- [ ] Neither is correct (provide correct version)",
-            "",
-            "## Resolution Notes",
-            "",
-            "_To be filled by reviewer_",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Source Code Context",
+                "",
+                f"```{self.language}",
+                self.source_code_snippet,
+                "```",
+                "",
+                "## Requested Action",
+                "",
+                "Please review and indicate which interpretation is correct:",
+                "- [ ] Stream A is correct",
+                "- [ ] Stream B is correct",
+                "- [ ] Both are partially correct (provide merged version)",
+                "- [ ] Neither is correct (provide correct version)",
+                "",
+                "## Resolution Notes",
+                "",
+                "_To be filled by reviewer_",
+            ]
+        )
 
         return "\n".join(lines)
 
@@ -281,21 +265,11 @@ class RebuildTicket(BaseModel):
         max_length=255,
         description="Rebuild summary",
     )
-    component_id: str = Field(
-        ..., description="Component ID"
-    )
-    component_name: str = Field(
-        ..., description="Short name"
-    )
-    file_path: str = Field(
-        ..., description="File path"
-    )
-    line_start: int = Field(
-        ..., ge=1, description="Start line"
-    )
-    line_end: int = Field(
-        ..., ge=1, description="End line"
-    )
+    component_id: str = Field(..., description="Component ID")
+    component_name: str = Field(..., description="Short name")
+    file_path: str = Field(..., description="File path")
+    line_start: int = Field(..., ge=1, description="Start line")
+    line_end: int = Field(..., ge=1, description="End line")
     confidence_score: int = Field(
         default=80,
         ge=0,
@@ -306,22 +280,14 @@ class RebuildTicket(BaseModel):
         default="medium",
         description="Confidence level",
     )
-    documentation_summary: str = Field(
-        default="", description="One-line summary"
-    )
-    documentation_description: str = Field(
-        default="", description="Full description"
-    )
+    documentation_summary: str = Field(default="", description="One-line summary")
+    documentation_description: str = Field(default="", description="Full description")
     parameters: list[dict] = Field(
         default_factory=list,
         description="Parameter docs",
     )
-    returns_type: Optional[str] = Field(
-        default=None, description="Return type"
-    )
-    returns_description: str = Field(
-        default="", description="Return description"
-    )
+    returns_type: str | None = Field(default=None, description="Return type")
+    returns_description: str = Field(default="", description="Return description")
     raises: list[dict] = Field(
         default_factory=list,
         description="Exception docs",
@@ -351,7 +317,7 @@ class RebuildTicket(BaseModel):
     created_at: datetime = Field(
         default_factory=datetime.utcnow,
     )
-    ticket_key: Optional[str] = Field(
+    ticket_key: str | None = Field(
         default=None,
         description="Beads ticket key",
     )
@@ -414,15 +380,17 @@ class RebuildTicket(BaseModel):
         if not self.parameters:
             lines.append("| _None_ | | | |")
 
-        lines.extend([
-            "",
-            "### Returns",
-            f"- **Type:** `{self.returns_type or 'None'}`",
-            f"- **Description:** {self.returns_description or '_No description_'}",
-            "",
-            "### Exceptions",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "### Returns",
+                f"- **Type:** `{self.returns_type or 'None'}`",
+                f"- **Description:** {self.returns_description or '_No description_'}",
+                "",
+                "### Exceptions",
+                "",
+            ]
+        )
 
         for exc in self.raises:
             etype = exc.get("type", "Exception")
@@ -432,13 +400,15 @@ class RebuildTicket(BaseModel):
         if not self.raises:
             lines.append("_None documented_")
 
-        lines.extend([
-            "",
-            f"## Call Graph",
-            "",
-            f"### This component calls ({len(self.callees)} dependencies):",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Call Graph",
+                "",
+                f"### This component calls ({len(self.callees)} dependencies):",
+                "",
+            ]
+        )
 
         for callee in self.callees:
             cid = callee.get("component_id", "")
@@ -449,11 +419,13 @@ class RebuildTicket(BaseModel):
         if not self.callees:
             lines.append("_None_")
 
-        lines.extend([
-            "",
-            f"### Called by ({len(self.callers)} dependents):",
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                f"### Called by ({len(self.callers)} dependents):",
+                "",
+            ]
+        )
 
         for caller in self.callers:
             cid = caller.get("component_id", "")
@@ -463,15 +435,17 @@ class RebuildTicket(BaseModel):
         if not self.callers:
             lines.append("_None_")
 
-        lines.extend([
-            "",
-            "## Rebuild Checklist",
-            "",
-            f"- [ ] Implement documented interface exactly",
-            f"- [ ] Preserve all {len(self.callees)} downstream dependencies",
-            f"- [ ] Ensure compatibility with {len(self.callers)} upstream callers",
-            f"- [ ] Add unit tests for documented exceptions",
-            f"- [ ] Verify call graph matches specification",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Rebuild Checklist",
+                "",
+                "- [ ] Implement documented interface exactly",
+                f"- [ ] Preserve all {len(self.callees)} downstream dependencies",
+                f"- [ ] Ensure compatibility with {len(self.callers)} upstream callers",
+                "- [ ] Add unit tests for documented exceptions",
+                "- [ ] Verify call graph matches specification",
+            ]
+        )
 
         return "\n".join(lines)

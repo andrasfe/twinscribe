@@ -38,10 +38,12 @@ def log_calls(func: Callable[..., T]) -> Callable[..., T]:
     Returns:
         Wrapped function that logs calls
     """
+
     @wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> T:
         print(f"Calling {func.__name__} with args={args}, kwargs={kwargs}")
         return func(*args, **kwargs)
+
     return wrapper
 
 
@@ -55,17 +57,20 @@ def retry(max_attempts: int = 3):
     Returns:
         Decorator that implements retry logic
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
             last_error = None
-            for attempt in range(max_attempts):
+            for _attempt in range(max_attempts):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
                     last_error = e
             raise RuntimeError(f"Failed after {max_attempts} attempts") from last_error
+
         return wrapper
+
     return decorator
 
 
@@ -89,6 +94,7 @@ def cache_result(func: Callable[..., T]) -> Callable[..., T]:
         if key not in _cache:
             _cache[key] = func(*args, **kwargs)
         return _cache[key]
+
     return wrapper
 
 
@@ -131,6 +137,7 @@ async def process_items_async(items: list[dict]) -> list[dict]:
     Returns:
         List of processed items
     """
+
     async def process_single(item: dict) -> dict:
         await asyncio.sleep(0.001)
         return {**item, "processed": True}
@@ -262,9 +269,7 @@ class Validator:
     def __set__(self, obj: Any, value: float) -> None:
         """Set and validate the value."""
         if not self.min_value <= value <= self.max_value:
-            raise ValueError(
-                f"{self.name} must be between {self.min_value} and {self.max_value}"
-            )
+            raise ValueError(f"{self.name} must be between {self.min_value} and {self.max_value}")
         setattr(obj, self.private_name, value)
 
 
@@ -555,7 +560,7 @@ class ServiceWithDecorators:
     def cached_method(self, value: int) -> int:
         """Method with caching decorator."""
         self._calls += 1
-        return value ** 2
+        return value**2
 
     @retry(max_attempts=3)
     def unreliable_method(self, fail_count: int = 0) -> str:

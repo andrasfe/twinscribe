@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -18,12 +18,12 @@ from pydantic import BaseModel, Field
 class AnalyzerType(str, Enum):
     """Type of static analyzer."""
 
-    PYCG = "pycg"                    # Python Call Graph
-    PYAN3 = "pyan3"                  # Python analyzer
+    PYCG = "pycg"  # Python Call Graph
+    PYAN3 = "pyan3"  # Python analyzer
     JAVA_CALLGRAPH = "java-callgraph"  # Java call graph
-    WALA = "wala"                    # IBM WALA for Java
+    WALA = "wala"  # IBM WALA for Java
     TS_CALLGRAPH = "typescript-call-graph"  # TypeScript/JavaScript
-    SOURCETRAIL = "sourcetrail"     # Multi-language indexer
+    SOURCETRAIL = "sourcetrail"  # Multi-language indexer
 
 
 class Language(str, Enum):
@@ -51,13 +51,9 @@ class AnalyzerConfig(BaseModel):
         extra_args: Additional command-line arguments
     """
 
-    analyzer_type: AnalyzerType = Field(
-        ..., description="Type of analyzer"
-    )
-    language: Language = Field(
-        ..., description="Target language"
-    )
-    executable_path: Optional[str] = Field(
+    analyzer_type: AnalyzerType = Field(..., description="Type of analyzer")
+    language: Language = Field(..., description="Target language")
+    executable_path: str | None = Field(
         default=None,
         description="Path to analyzer executable",
     )
@@ -141,8 +137,8 @@ class AnalyzerError(Exception):
         self,
         message: str,
         analyzer_type: AnalyzerType,
-        exit_code: Optional[int] = None,
-        stderr: Optional[str] = None,
+        exit_code: int | None = None,
+        stderr: str | None = None,
     ) -> None:
         """Initialize analyzer error.
 
@@ -171,7 +167,7 @@ class RawCallEdge:
 
     caller: str
     callee: str
-    line_number: Optional[int] = None
+    line_number: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -258,7 +254,7 @@ class Analyzer(ABC):
         pass
 
     @abstractmethod
-    async def get_version(self) -> Optional[str]:
+    async def get_version(self) -> str | None:
         """Get the version of the analyzer tool.
 
         Returns:
@@ -331,10 +327,7 @@ class Analyzer(ABC):
         filtered = []
         for file_path in all_files:
             rel_path = str(file_path.relative_to(codebase_path))
-            excluded = any(
-                fnmatch.fnmatch(rel_path, exc)
-                for exc in self._config.exclude_patterns
-            )
+            excluded = any(fnmatch.fnmatch(rel_path, exc) for exc in self._config.exclude_patterns)
             if not excluded:
                 filtered.append(file_path)
 

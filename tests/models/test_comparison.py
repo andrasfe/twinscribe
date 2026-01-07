@@ -9,18 +9,19 @@ Tests cover:
 - ComparisonResult model
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
 from pydantic import ValidationError
 
 from twinscribe.models.base import DiscrepancyType, ResolutionAction
 from twinscribe.models.comparison import (
     BeadsTicketRef,
-    Discrepancy,
-    ConvergenceStatus,
-    ComparisonSummary,
     ComparatorMetadata,
     ComparisonResult,
+    ComparisonSummary,
+    ConvergenceStatus,
+    Discrepancy,
 )
 
 

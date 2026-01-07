@@ -242,9 +242,7 @@ class ProcessingResult(Generic[T]):
             RuntimeError: If processing failed or data is None.
         """
         if self.is_failure:
-            raise RuntimeError(
-                f"Cannot unwrap failed result: {self.message}"
-            ) from self.error
+            raise RuntimeError(f"Cannot unwrap failed result: {self.message}") from self.error
 
         if self.data is None:
             raise RuntimeError("Result data is None")

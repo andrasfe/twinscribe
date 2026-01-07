@@ -11,7 +11,7 @@ import shutil
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -70,9 +70,9 @@ class BeadsIssue:
     status: str = "open"
     priority: int = 1
     labels: list[str] = field(default_factory=list)
-    created: Optional[datetime] = None
-    updated: Optional[datetime] = None
-    parent_id: Optional[str] = None
+    created: datetime | None = None
+    updated: datetime | None = None
+    parent_id: str | None = None
     dependencies: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -104,7 +104,7 @@ class CreateIssueRequest:
     description: str = ""
     priority: int = 1
     labels: list[str] = field(default_factory=list)
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
     dependencies: list[str] = field(default_factory=list)
 
 
@@ -114,7 +114,7 @@ class BeadsClient:
     Wraps the bd CLI commands for async Python usage.
     """
 
-    def __init__(self, config: Optional[BeadsClientConfig] = None) -> None:
+    def __init__(self, config: BeadsClientConfig | None = None) -> None:
         """Initialize the client.
 
         Args:
@@ -122,7 +122,7 @@ class BeadsClient:
         """
         self._config = config or BeadsClientConfig()
         self._initialized = False
-        self._bd_path: Optional[str] = None
+        self._bd_path: str | None = None
 
     @property
     def config(self) -> BeadsClientConfig:
@@ -143,9 +143,7 @@ class BeadsClient:
         # Check if bd is available
         self._bd_path = shutil.which("bd")
         if not self._bd_path:
-            raise BeadsError(
-                "Beads CLI (bd) not found. Install via: ./scripts/install-beads.sh"
-            )
+            raise BeadsError("Beads CLI (bd) not found. Install via: ./scripts/install-beads.sh")
 
         # Check if beads is initialized in the repo
         beads_dir = Path(self._config.directory)
@@ -203,7 +201,7 @@ class BeadsClient:
 
             return stdout.decode() if stdout else ""
 
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             raise BeadsError(f"bd command timed out: {' '.join(args)}") from e
 
     async def create_issue(self, request: CreateIssueRequest) -> BeadsIssue:
@@ -279,8 +277,8 @@ class BeadsClient:
     async def update_issue(
         self,
         issue_id: str,
-        status: Optional[str] = None,
-        priority: Optional[int] = None,
+        status: str | None = None,
+        priority: int | None = None,
         **kwargs: Any,
     ) -> BeadsIssue:
         """Update an issue.
@@ -378,7 +376,7 @@ class BeadsClient:
 
         raise BeadsError(f"Could not parse issue ID from output: {output}")
 
-    def _parse_datetime(self, value: Optional[str]) -> Optional[datetime]:
+    def _parse_datetime(self, value: str | None) -> datetime | None:
         """Parse datetime from string.
 
         Args:
@@ -401,7 +399,7 @@ class BeadsError(Exception):
     def __init__(
         self,
         message: str,
-        exit_code: Optional[int] = None,
+        exit_code: int | None = None,
     ) -> None:
         super().__init__(message)
         self.exit_code = exit_code

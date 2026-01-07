@@ -6,8 +6,9 @@ Tests cover:
 - ConvergenceReport model and helper methods
 """
 
-import pytest
 from datetime import datetime, timedelta
+
+import pytest
 from pydantic import ValidationError
 
 from twinscribe.models.convergence import (

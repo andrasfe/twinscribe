@@ -8,17 +8,18 @@ Tests cover:
 - ValidationResult model
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
 from pydantic import ValidationError
 
 from twinscribe.models.base import StreamId, ValidationStatus
 from twinscribe.models.validation import (
-    CompletenessCheck,
     CallGraphAccuracy,
+    CompletenessCheck,
     CorrectionApplied,
-    ValidatorMetadata,
     ValidationResult,
+    ValidatorMetadata,
 )
 
 

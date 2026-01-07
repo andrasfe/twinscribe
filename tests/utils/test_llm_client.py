@@ -6,23 +6,23 @@ These tests use mocking to avoid actual API calls.
 
 import asyncio
 import json
+
 import pytest
 import respx
 from httpx import Response
 
 from twinscribe.utils.llm_client import (
-    AsyncLLMClient,
-    AuthenticationError,
-    RateLimitError,
-    ModelNotFoundError,
-    APIError,
-    TokenUsage,
-    LLMResponse,
-    Message,
-    UsageTracker,
-    RateLimiter,
     OPENROUTER_BASE_URL,
     OPENROUTER_CHAT_ENDPOINT,
+    AsyncLLMClient,
+    AuthenticationError,
+    LLMResponse,
+    Message,
+    ModelNotFoundError,
+    RateLimiter,
+    RateLimitError,
+    TokenUsage,
+    UsageTracker,
 )
 
 
@@ -396,9 +396,7 @@ class TestAsyncLLMClientAPI:
             "model": "openai/gpt-4o",
             "choices": [
                 {
-                    "message": {
-                        "content": '{"summary": "Test function", "parameters": []}'
-                    },
+                    "message": {"content": '{"summary": "Test function", "parameters": []}'},
                     "finish_reason": "stop",
                 }
             ],

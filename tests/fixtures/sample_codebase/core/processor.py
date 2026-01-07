@@ -249,9 +249,7 @@ class DataProcessor:
             elif isinstance(value, list):
                 # Process list items
                 result[key] = [
-                    self._process_item(v, depth + 1, max_depth)
-                    if isinstance(v, dict)
-                    else v
+                    self._process_item(v, depth + 1, max_depth) if isinstance(v, dict) else v
                     for v in value
                 ]
             else:

@@ -9,25 +9,44 @@ This module provides shared utility functions and helpers:
 - File and path handling helpers
 - Token counting and cost estimation
 - LLM client for OpenRouter API
+- Metrics collection and structured logging
 
 These utilities are used across all other modules.
 """
 
 from twinscribe.utils.llm_client import (
-    AsyncLLMClient,
-    LLMClientError,
-    AuthenticationError,
-    RateLimitError,
-    ModelNotFoundError,
     APIError,
-    TokenUsage,
+    AsyncLLMClient,
+    AuthenticationError,
+    LLMClientError,
     LLMResponse,
     Message,
-    UsageTracker,
+    ModelNotFoundError,
     RateLimiter,
+    RateLimitError,
+    TokenUsage,
+    UsageTracker,
+    get_comparator_client,
     get_documenter_client,
     get_validator_client,
-    get_comparator_client,
+)
+from twinscribe.utils.metrics import (
+    BeadsTicketMetrics,
+    CallGraphMetrics,
+    ComponentMetrics,
+    ConvergenceMetrics,
+    CostMetrics,
+    MetricCategory,
+    MetricsCollector,
+    # Metrics classes
+    PhaseMetrics,
+    # Enums
+    ProcessingPhase,
+    # Structured logging
+    StructuredLogger,
+    # Factory functions
+    get_metrics_collector,
+    get_structured_logger,
 )
 
 __all__ = [
@@ -47,4 +66,20 @@ __all__ = [
     "get_documenter_client",
     "get_validator_client",
     "get_comparator_client",
+    # Metrics - Enums
+    "ProcessingPhase",
+    "MetricCategory",
+    # Metrics - Classes
+    "PhaseMetrics",
+    "CallGraphMetrics",
+    "CostMetrics",
+    "ConvergenceMetrics",
+    "BeadsTicketMetrics",
+    "ComponentMetrics",
+    "MetricsCollector",
+    # Structured Logging
+    "StructuredLogger",
+    # Metrics Factory Functions
+    "get_metrics_collector",
+    "get_structured_logger",
 ]

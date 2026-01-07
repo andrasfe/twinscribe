@@ -5,7 +5,7 @@ These models represent the ground truth call graph extracted from static
 analysis, as well as call graphs inferred by documentation agents.
 """
 
-from typing import Iterator, Optional
+from collections.abc import Iterator
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -26,18 +26,10 @@ class CallEdge(BaseModel):
         confidence: Confidence score (1.0 for static analysis)
     """
 
-    caller: str = Field(
-        ..., min_length=1, description="Component ID of caller"
-    )
-    callee: str = Field(
-        ..., min_length=1, description="Component ID of callee"
-    )
-    call_site_line: Optional[int] = Field(
-        default=None, ge=1, description="Line number of call site"
-    )
-    call_type: CallType = Field(
-        default=CallType.DIRECT, description="Type of call"
-    )
+    caller: str = Field(..., min_length=1, description="Component ID of caller")
+    callee: str = Field(..., min_length=1, description="Component ID of callee")
+    call_site_line: int | None = Field(default=None, ge=1, description="Line number of call site")
+    call_type: CallType = Field(default=CallType.DIRECT, description="Type of call")
     confidence: float = Field(
         default=1.0,
         ge=0.0,
@@ -71,9 +63,7 @@ class CallGraph(BaseModel):
         source: Origin of this call graph (static analysis tool name, agent ID)
     """
 
-    edges: list[CallEdge] = Field(
-        default_factory=list, description="All call edges"
-    )
+    edges: list[CallEdge] = Field(default_factory=list, description="All call edges")
     source: str = Field(
         default="unknown",
         description="Origin: 'pycg', 'pyan3', 'agent_A1', etc.",
@@ -127,9 +117,7 @@ class CallGraph(BaseModel):
         Returns:
             True if the edge exists
         """
-        return any(
-            e.caller == caller and e.callee == callee for e in self.edges
-        )
+        return any(e.caller == caller and e.callee == callee for e in self.edges)
 
     def add_edge(self, edge: CallEdge) -> bool:
         """Add an edge if it doesn't already exist.
@@ -156,10 +144,7 @@ class CallGraph(BaseModel):
             True if edge was removed, False if not found
         """
         original_len = len(self.edges)
-        self.edges = [
-            e for e in self.edges
-            if not (e.caller == caller and e.callee == callee)
-        ]
+        self.edges = [e for e in self.edges if not (e.caller == caller and e.callee == callee)]
         return len(self.edges) < original_len
 
     def all_nodes(self) -> set[str]:
@@ -248,15 +233,10 @@ class CallGraphDiff(BaseModel):
     @property
     def is_perfect_match(self) -> bool:
         """True if documented graph exactly matches ground truth."""
-        return (
-            len(self.missing_in_doc) == 0
-            and len(self.extra_in_doc) == 0
-        )
+        return len(self.missing_in_doc) == 0 and len(self.extra_in_doc) == 0
 
     @classmethod
-    def compute(
-        cls, ground_truth: CallGraph, documented: CallGraph
-    ) -> "CallGraphDiff":
+    def compute(cls, ground_truth: CallGraph, documented: CallGraph) -> "CallGraphDiff":
         """Compute the difference between ground truth and documented graphs.
 
         Args:

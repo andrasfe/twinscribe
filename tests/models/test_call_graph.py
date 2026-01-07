@@ -307,7 +307,7 @@ class TestCallGraphDiff:
 
         assert not diff.is_perfect_match
         assert diff.precision == 1.0  # All documented edges are correct
-        assert diff.recall == 1/3  # Only 1 of 3 edges found
+        assert diff.recall == 1 / 3  # Only 1 of 3 edges found
         assert len(diff.missing_in_doc) == 2
         assert len(diff.extra_in_doc) == 0
 
@@ -328,7 +328,7 @@ class TestCallGraphDiff:
         diff = CallGraphDiff.compute(ground_truth, documented)
 
         assert not diff.is_perfect_match
-        assert diff.precision == 1/3  # Only 1 of 3 documented edges is correct
+        assert diff.precision == 1 / 3  # Only 1 of 3 documented edges is correct
         assert diff.recall == 1.0  # All ground truth edges found
         assert len(diff.missing_in_doc) == 0
         assert len(diff.extra_in_doc) == 2
@@ -367,9 +367,7 @@ class TestCallGraphDiff:
 
     def test_empty_documented_vs_non_empty_truth(self):
         """Test diff when documented is empty but truth is not."""
-        ground_truth = CallGraph(
-            edges=[CallEdge(caller="a", callee="b")]
-        )
+        ground_truth = CallGraph(edges=[CallEdge(caller="a", callee="b")])
         documented = CallGraph()
 
         diff = CallGraphDiff.compute(ground_truth, documented)

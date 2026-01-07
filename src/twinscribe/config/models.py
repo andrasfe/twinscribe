@@ -7,7 +7,7 @@ and type safety.
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -376,7 +376,7 @@ class AnalyzerToolConfig(BaseModel):
     """
 
     enabled: bool = Field(default=True)
-    executable: Optional[str] = Field(default=None)
+    executable: str | None = Field(default=None)
     extra_args: list[str] = Field(default_factory=list)
     timeout_seconds: int = Field(default=300, ge=1)
 
@@ -425,6 +425,388 @@ class StaticAnalysisConfig(BaseModel):
         ge=0,
         description="Cache TTL (0 = no expiry)",
     )
+
+
+class VerificationStrategy(str, Enum):
+    """Available verification strategies."""
+
+    QA_INTERROGATION = "qa_interrogation"
+    MASKED_RECONSTRUCTION = "masked_reconstruction"
+    SCENARIO_WALKTHROUGH = "scenario_walkthrough"
+    MUTATION_DETECTION = "mutation_detection"
+    IMPACT_ANALYSIS = "impact_analysis"
+    ADVERSARIAL_REVIEW = "adversarial_review"
+    TEST_GENERATION = "test_generation"
+
+
+class VerificationThresholdsConfig(BaseModel):
+    """Threshold configuration for verification quality scores.
+
+    Attributes:
+        min_overall_quality: Minimum overall quality score to pass verification
+        min_qa_score: Minimum Q&A interrogation score
+        min_reconstruction_score: Minimum masked reconstruction score
+        min_scenario_score: Minimum scenario walkthrough score
+        min_test_pass_rate: Minimum generated test pass rate
+    """
+
+    min_overall_quality: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description="Minimum overall quality score to pass",
+    )
+    min_qa_score: float = Field(
+        default=0.80,
+        ge=0.0,
+        le=1.0,
+        description="Minimum Q&A interrogation score",
+    )
+    min_reconstruction_score: float = Field(
+        default=0.75,
+        ge=0.0,
+        le=1.0,
+        description="Minimum masked reconstruction score",
+    )
+    min_scenario_score: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description="Minimum scenario walkthrough score",
+    )
+    min_test_pass_rate: float = Field(
+        default=0.90,
+        ge=0.0,
+        le=1.0,
+        description="Minimum generated test pass rate",
+    )
+
+
+class QAQuestionCategory(str, Enum):
+    """Categories for Q&A interrogation questions."""
+
+    RETURN_VALUE = "return_value"
+    ERROR_HANDLING = "error_handling"
+    EDGE_CASE = "edge_case"
+    CALL_FLOW = "call_flow"
+
+
+class QAInterrogationConfig(BaseModel):
+    """Configuration for Q&A interrogation verification strategy.
+
+    This strategy generates questions about code behavior and validates
+    that the documentation can answer them correctly.
+
+    Attributes:
+        questions_per_component: Number of questions to generate per component
+        categories: Question categories to include
+    """
+
+    questions_per_component: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        description="Number of questions per component",
+    )
+    categories: list[QAQuestionCategory] = Field(
+        default_factory=lambda: [
+            QAQuestionCategory.RETURN_VALUE,
+            QAQuestionCategory.ERROR_HANDLING,
+            QAQuestionCategory.EDGE_CASE,
+            QAQuestionCategory.CALL_FLOW,
+        ],
+        description="Question categories to include",
+    )
+
+
+class MaskType(str, Enum):
+    """Types of code elements that can be masked for reconstruction."""
+
+    CONSTANTS = "constants"
+    CONDITIONS = "conditions"
+    RETURNS = "returns"
+
+
+class MaskedReconstructionConfig(BaseModel):
+    """Configuration for masked reconstruction verification strategy.
+
+    This strategy masks portions of code and validates that documentation
+    contains enough information to reconstruct the masked elements.
+
+    Attributes:
+        mask_ratio: Ratio of elements to mask (0.0-1.0)
+        mask_types: Types of code elements to mask
+    """
+
+    mask_ratio: float = Field(
+        default=0.3,
+        ge=0.0,
+        le=1.0,
+        description="Ratio of elements to mask",
+    )
+    mask_types: list[MaskType] = Field(
+        default_factory=lambda: [
+            MaskType.CONSTANTS,
+            MaskType.CONDITIONS,
+            MaskType.RETURNS,
+        ],
+        description="Types of code elements to mask",
+    )
+
+
+class ScenarioType(str, Enum):
+    """Types of scenarios for walkthrough testing."""
+
+    HAPPY_PATH = "happy_path"
+    ERROR_PATH = "error_path"
+    EDGE_CASE = "edge_case"
+
+
+class ScenarioWalkthroughConfig(BaseModel):
+    """Configuration for scenario walkthrough verification strategy.
+
+    This strategy creates usage scenarios and validates that documentation
+    correctly describes the behavior for each scenario.
+
+    Attributes:
+        scenarios_per_component: Number of scenarios per component
+        types: Types of scenarios to generate
+    """
+
+    scenarios_per_component: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Number of scenarios per component",
+    )
+    types: list[ScenarioType] = Field(
+        default_factory=lambda: [
+            ScenarioType.HAPPY_PATH,
+            ScenarioType.ERROR_PATH,
+            ScenarioType.EDGE_CASE,
+        ],
+        description="Types of scenarios to generate",
+    )
+
+
+class MutationType(str, Enum):
+    """Types of mutations for mutation detection testing."""
+
+    BOUNDARY = "boundary"
+    OFF_BY_ONE = "off_by_one"
+    NULL_HANDLING = "null_handling"
+
+
+class MutationDetectionConfig(BaseModel):
+    """Configuration for mutation detection verification strategy.
+
+    This strategy introduces mutations to code behavior descriptions
+    and validates that the documentation can detect these changes.
+
+    Attributes:
+        mutations_per_component: Number of mutations per component
+        mutation_types: Types of mutations to introduce
+    """
+
+    mutations_per_component: int = Field(
+        default=5,
+        ge=1,
+        le=50,
+        description="Number of mutations per component",
+    )
+    mutation_types: list[MutationType] = Field(
+        default_factory=lambda: [
+            MutationType.BOUNDARY,
+            MutationType.OFF_BY_ONE,
+            MutationType.NULL_HANDLING,
+        ],
+        description="Types of mutations to introduce",
+    )
+
+
+class AdversarialReviewConfig(BaseModel):
+    """Configuration for adversarial review verification strategy.
+
+    This strategy uses an adversarial model to find issues
+    in the documentation.
+
+    Attributes:
+        max_findings_per_component: Maximum findings to report per component
+    """
+
+    max_findings_per_component: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum findings per component",
+    )
+
+
+class TestGenerationConfig(BaseModel):
+    """Configuration for test generation verification strategy.
+
+    This strategy generates tests from documentation and validates
+    they pass against the actual code.
+
+    Attributes:
+        tests_per_component: Number of tests to generate per component
+        run_generated_tests: Whether to actually run the generated tests
+    """
+
+    tests_per_component: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Number of tests per component",
+    )
+    run_generated_tests: bool = Field(
+        default=True,
+        description="Whether to run generated tests",
+    )
+
+
+class VerificationConfig(BaseModel):
+    """Configuration for the CrossCheck verification framework.
+
+    The CrossCheck Verification Framework provides multiple strategies
+    to validate documentation quality and accuracy against the source code.
+
+    Attributes:
+        enabled: Whether verification is enabled
+        enabled_strategies: List of verification strategies to use
+        thresholds: Score thresholds for passing verification
+        qa_interrogation: Q&A interrogation strategy config
+        masked_reconstruction: Masked reconstruction strategy config
+        scenario_walkthrough: Scenario walkthrough strategy config
+        mutation_detection: Mutation detection strategy config
+        adversarial_review: Adversarial review strategy config
+        test_generation: Test generation strategy config
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable verification framework",
+    )
+    enabled_strategies: list[VerificationStrategy] = Field(
+        default_factory=lambda: [
+            VerificationStrategy.QA_INTERROGATION,
+            VerificationStrategy.MASKED_RECONSTRUCTION,
+            VerificationStrategy.SCENARIO_WALKTHROUGH,
+            VerificationStrategy.MUTATION_DETECTION,
+            VerificationStrategy.IMPACT_ANALYSIS,
+            VerificationStrategy.ADVERSARIAL_REVIEW,
+            VerificationStrategy.TEST_GENERATION,
+        ],
+        description="Verification strategies to run",
+    )
+    thresholds: VerificationThresholdsConfig = Field(
+        default_factory=VerificationThresholdsConfig,
+        description="Verification score thresholds",
+    )
+    qa_interrogation: QAInterrogationConfig = Field(
+        default_factory=QAInterrogationConfig,
+        description="Q&A interrogation config",
+    )
+    masked_reconstruction: MaskedReconstructionConfig = Field(
+        default_factory=MaskedReconstructionConfig,
+        description="Masked reconstruction config",
+    )
+    scenario_walkthrough: ScenarioWalkthroughConfig = Field(
+        default_factory=ScenarioWalkthroughConfig,
+        description="Scenario walkthrough config",
+    )
+    mutation_detection: MutationDetectionConfig = Field(
+        default_factory=MutationDetectionConfig,
+        description="Mutation detection config",
+    )
+    adversarial_review: AdversarialReviewConfig = Field(
+        default_factory=AdversarialReviewConfig,
+        description="Adversarial review config",
+    )
+    test_generation: TestGenerationConfig = Field(
+        default_factory=TestGenerationConfig,
+        description="Test generation config",
+    )
+
+    def is_strategy_enabled(self, strategy: VerificationStrategy) -> bool:
+        """Check if a specific verification strategy is enabled.
+
+        Args:
+            strategy: The strategy to check
+
+        Returns:
+            True if the strategy is in the enabled_strategies list
+        """
+        return self.enabled and strategy in self.enabled_strategies
+
+
+class LogLevel(str, Enum):
+    """Logging level."""
+
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+
+class LoggingConfig(BaseModel):
+    """Configuration for logging.
+
+    Attributes:
+        level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+        format: Log message format string
+        file: Optional log file path (None for stdout only)
+        json_output: Output logs as JSON for structured logging
+        include_timestamp: Include timestamp in log output
+        include_module: Include module name in log output
+    """
+
+    level: LogLevel = Field(
+        default=LogLevel.INFO,
+        description="Log level",
+    )
+    format: str = Field(
+        default="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        description="Log format string",
+    )
+    file: str | None = Field(
+        default=None,
+        description="Log file path (None for stdout only)",
+    )
+    json_output: bool = Field(
+        default=False,
+        description="Output logs as JSON",
+    )
+    include_timestamp: bool = Field(
+        default=True,
+        description="Include timestamp in logs",
+    )
+    include_module: bool = Field(
+        default=True,
+        description="Include module name in logs",
+    )
+
+    def get_format_string(self) -> str:
+        """Build format string based on configuration.
+
+        Returns:
+            Log format string
+        """
+        if self.json_output:
+            # For JSON output, return a simple format (actual JSON formatting
+            # would be handled by the logging handler)
+            return "%(message)s"
+
+        parts = []
+        if self.include_timestamp:
+            parts.append("%(asctime)s")
+        if self.include_module:
+            parts.append("%(name)s")
+        parts.append("%(levelname)s")
+        parts.append("%(message)s")
+
+        return " - ".join(parts)
 
 
 class OutputConfig(BaseModel):
@@ -494,6 +876,7 @@ class TwinscribeConfig(BaseModel):
         convergence: Convergence criteria
         beads: Beads integration configuration
         static_analysis: Static analysis configuration
+        verification: CrossCheck verification framework configuration
         output: Output paths configuration
         debug: Enable debug mode
         dry_run: Run without making changes
@@ -519,9 +902,17 @@ class TwinscribeConfig(BaseModel):
         default_factory=StaticAnalysisConfig,
         description="Static analysis config",
     )
+    verification: VerificationConfig = Field(
+        default_factory=VerificationConfig,
+        description="CrossCheck verification framework config",
+    )
     output: OutputConfig = Field(
         default_factory=OutputConfig,
         description="Output configuration",
+    )
+    logging: LoggingConfig = Field(
+        default_factory=LoggingConfig,
+        description="Logging configuration",
     )
     debug: bool = Field(
         default=False,

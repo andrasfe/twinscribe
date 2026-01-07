@@ -8,7 +8,7 @@ documentation system.
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -152,7 +152,9 @@ class ConvergenceChecker:
         checks["call_graph"] = call_graph_match_rate >= self._criteria.call_graph_match_threshold
 
         # Documentation similarity threshold
-        checks["documentation"] = documentation_similarity >= self._criteria.documentation_similarity_threshold
+        checks["documentation"] = (
+            documentation_similarity >= self._criteria.documentation_similarity_threshold
+        )
 
         # No blocking discrepancies
         checks["no_blocking"] = len(blocking) == 0
@@ -241,9 +243,7 @@ class ConvergenceChecker:
             )
 
         if not details.get("no_blocking", True):
-            actions.append(
-                f"Resolve {check.blocking_count} blocking discrepancies"
-            )
+            actions.append(f"Resolve {check.blocking_count} blocking discrepancies")
 
         if not details.get("discrepancy_limit", True):
             excess = check.non_blocking_count - self._criteria.max_open_discrepancies
@@ -269,7 +269,7 @@ class ConvergenceHistoryEntry:
 
     iteration: int
     timestamp: datetime = field(default_factory=datetime.utcnow)
-    check_result: Optional[ConvergenceCheck] = None
+    check_result: ConvergenceCheck | None = None
     actions_taken: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -284,7 +284,9 @@ class ConvergenceHistoryEntry:
                 "documentation_similarity": self.check_result.documentation_similarity,
                 "blocking_count": self.check_result.blocking_count,
                 "non_blocking_count": self.check_result.non_blocking_count,
-            } if self.check_result else None,
+            }
+            if self.check_result
+            else None,
             "actions_taken": self.actions_taken,
         }
 
@@ -322,7 +324,7 @@ class ConvergenceTracker:
         return self._history
 
     @property
-    def latest(self) -> Optional[ConvergenceHistoryEntry]:
+    def latest(self) -> ConvergenceHistoryEntry | None:
         """Get latest history entry."""
         return self._history[-1] if self._history else None
 
@@ -330,7 +332,7 @@ class ConvergenceTracker:
         self,
         iteration: int,
         check_result: ConvergenceCheck,
-        actions_taken: Optional[list[str]] = None,
+        actions_taken: list[str] | None = None,
     ) -> None:
         """Record a convergence check.
 
@@ -400,11 +402,7 @@ class ConvergenceTracker:
         recent = self._history[-window:]
 
         # Check if all checks have same blocking count
-        blocking_counts = [
-            e.check_result.blocking_count
-            for e in recent
-            if e.check_result
-        ]
+        blocking_counts = [e.check_result.blocking_count for e in recent if e.check_result]
 
         if len(set(blocking_counts)) == 1 and blocking_counts[0] > 0:
             return True
@@ -433,15 +431,12 @@ class ConvergenceTracker:
         # Check for stall
         if self.is_stalled():
             recommendations.append(
-                "Convergence appears stalled - consider manual intervention "
-                "or adjusting criteria"
+                "Convergence appears stalled - consider manual intervention or adjusting criteria"
             )
 
         # Check for regression
         if not self.is_improving():
-            recommendations.append(
-                "Metrics are declining - review recent changes and corrections"
-            )
+            recommendations.append("Metrics are declining - review recent changes and corrections")
 
         return recommendations
 
@@ -520,8 +515,8 @@ def calculate_similarity(
         all_words = set(words_a.keys()) | set(words_b.keys())
 
         dot_product = sum(words_a.get(w, 0) * words_b.get(w, 0) for w in all_words)
-        magnitude_a = sum(v ** 2 for v in words_a.values()) ** 0.5
-        magnitude_b = sum(v ** 2 for v in words_b.values()) ** 0.5
+        magnitude_a = sum(v**2 for v in words_a.values()) ** 0.5
+        magnitude_b = sum(v**2 for v in words_b.values()) ** 0.5
 
         if magnitude_a == 0 or magnitude_b == 0:
             return 0.0

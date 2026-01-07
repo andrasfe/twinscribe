@@ -6,7 +6,6 @@ including the merged documentation package and run metrics.
 """
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -28,27 +27,13 @@ class CostBreakdown(BaseModel):
         currency: Currency (default USD)
     """
 
-    stream_a_documenter: float = Field(
-        default=0.0, ge=0.0, description="Stream A documenter cost"
-    )
-    stream_a_validator: float = Field(
-        default=0.0, ge=0.0, description="Stream A validator cost"
-    )
-    stream_b_documenter: float = Field(
-        default=0.0, ge=0.0, description="Stream B documenter cost"
-    )
-    stream_b_validator: float = Field(
-        default=0.0, ge=0.0, description="Stream B validator cost"
-    )
-    comparator: float = Field(
-        default=0.0, ge=0.0, description="Comparator cost"
-    )
-    total: float = Field(
-        default=0.0, ge=0.0, description="Total cost"
-    )
-    currency: str = Field(
-        default="USD", description="Currency"
-    )
+    stream_a_documenter: float = Field(default=0.0, ge=0.0, description="Stream A documenter cost")
+    stream_a_validator: float = Field(default=0.0, ge=0.0, description="Stream A validator cost")
+    stream_b_documenter: float = Field(default=0.0, ge=0.0, description="Stream B documenter cost")
+    stream_b_validator: float = Field(default=0.0, ge=0.0, description="Stream B validator cost")
+    comparator: float = Field(default=0.0, ge=0.0, description="Comparator cost")
+    total: float = Field(default=0.0, ge=0.0, description="Total cost")
+    currency: str = Field(default="USD", description="Currency")
 
     def compute_total(self) -> float:
         """Compute and set total from components."""
@@ -103,53 +88,29 @@ class RunMetrics(BaseModel):
         description="Unique run identifier",
         examples=["run_20260106_001"],
     )
-    codebase_path: str = Field(
-        ..., description="Path to codebase"
-    )
-    language: str = Field(
-        default="python", description="Primary language"
-    )
+    codebase_path: str = Field(..., description="Path to codebase")
+    language: str = Field(default="python", description="Primary language")
     started_at: datetime = Field(
         default_factory=datetime.utcnow,
     )
-    completed_at: Optional[datetime] = Field(default=None)
-    components_total: int = Field(
-        default=0, ge=0, description="Total components"
-    )
-    components_documented: int = Field(
-        default=0, ge=0, description="Successfully documented"
-    )
-    call_graph_precision: float = Field(
-        default=0.0, ge=0.0, le=1.0
-    )
-    call_graph_recall: float = Field(
-        default=0.0, ge=0.0, le=1.0
-    )
-    call_graph_f1: float = Field(
-        default=0.0, ge=0.0, le=1.0
-    )
-    discrepancies_total: int = Field(
-        default=0, ge=0
-    )
+    completed_at: datetime | None = Field(default=None)
+    components_total: int = Field(default=0, ge=0, description="Total components")
+    components_documented: int = Field(default=0, ge=0, description="Successfully documented")
+    call_graph_precision: float = Field(default=0.0, ge=0.0, le=1.0)
+    call_graph_recall: float = Field(default=0.0, ge=0.0, le=1.0)
+    call_graph_f1: float = Field(default=0.0, ge=0.0, le=1.0)
+    discrepancies_total: int = Field(default=0, ge=0)
     discrepancies_resolved_auto: int = Field(
         default=0, ge=0, description="Resolved by ground truth"
     )
-    discrepancies_resolved_beads: int = Field(
-        default=0, ge=0, description="Resolved via Beads"
-    )
-    discrepancies_unresolved: int = Field(
-        default=0, ge=0
-    )
-    cost: CostBreakdown = Field(
-        default_factory=CostBreakdown
-    )
-    tokens_total: int = Field(
-        default=0, ge=0
-    )
+    discrepancies_resolved_beads: int = Field(default=0, ge=0, description="Resolved via Beads")
+    discrepancies_unresolved: int = Field(default=0, ge=0)
+    cost: CostBreakdown = Field(default_factory=CostBreakdown)
+    tokens_total: int = Field(default=0, ge=0)
 
     @computed_field
     @property
-    def duration_seconds(self) -> Optional[float]:
+    def duration_seconds(self) -> float | None:
         """Run duration in seconds."""
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()
@@ -188,12 +149,8 @@ class ComponentFinalDoc(BaseModel):
         beads_ticket_key: Associated Beads ticket if any
     """
 
-    component_id: str = Field(
-        ..., min_length=1, description="Component ID"
-    )
-    documentation: ComponentDocumentation = Field(
-        ..., description="Documentation content"
-    )
+    component_id: str = Field(..., min_length=1, description="Component ID")
+    documentation: ComponentDocumentation = Field(..., description="Documentation content")
     callers: list[str] = Field(
         default_factory=list,
         description="Caller component IDs",
@@ -213,12 +170,8 @@ class ComponentFinalDoc(BaseModel):
         description="Source of documentation",
         examples=["A", "B", "merged"],
     )
-    validation_passed: bool = Field(
-        default=True, description="Validation status"
-    )
-    beads_ticket_key: Optional[str] = Field(
-        default=None, description="Associated Beads ticket"
-    )
+    validation_passed: bool = Field(default=True, description="Validation status")
+    beads_ticket_key: str | None = Field(default=None, description="Associated Beads ticket")
 
     @computed_field
     @property
@@ -263,9 +216,7 @@ class DocumentationPackage(BaseModel):
         default_factory=ConvergenceReport,
         description="Convergence process report",
     )
-    metrics: RunMetrics = Field(
-        ..., description="Run metrics"
-    )
+    metrics: RunMetrics = Field(..., description="Run metrics")
     version: str = Field(
         default="2.0.0",
         description="Schema version",
@@ -283,7 +234,7 @@ class DocumentationPackage(BaseModel):
         """Number of call graph edges."""
         return self.call_graph.edge_count
 
-    def get_component(self, component_id: str) -> Optional[ComponentFinalDoc]:
+    def get_component(self, component_id: str) -> ComponentFinalDoc | None:
         """Get documentation for a specific component."""
         return self.documentation.get(component_id)
 

@@ -8,8 +8,9 @@ These tests verify:
 - mocking infrastructure is functional
 """
 
-import pytest
 from pathlib import Path
+
+import pytest
 
 
 class TestInfrastructure:
@@ -42,6 +43,7 @@ class TestAsyncSupport:
     async def test_async_function(self):
         """Verify async test functions work."""
         import asyncio
+
         await asyncio.sleep(0.001)
         assert True
 
@@ -59,12 +61,12 @@ class TestMockFixtures:
     def test_mock_openai_client(self, mock_openai_client):
         """Verify OpenAI mock client fixture."""
         assert mock_openai_client is not None
-        assert hasattr(mock_openai_client.chat.completions, 'create')
+        assert hasattr(mock_openai_client.chat.completions, "create")
 
     def test_mock_anthropic_client(self, mock_anthropic_client):
         """Verify Anthropic mock client fixture."""
         assert mock_anthropic_client is not None
-        assert hasattr(mock_anthropic_client.messages, 'create')
+        assert hasattr(mock_anthropic_client.messages, "create")
 
     def test_mock_documenter_response(self, mock_documenter_response: dict):
         """Verify documenter response fixture has expected structure."""
@@ -156,6 +158,7 @@ class TestConfigFixtures:
     def test_mock_env_vars(self, mock_env_vars: dict):
         """Verify environment variables are set."""
         import os
+
         for key, value in mock_env_vars.items():
             assert os.environ.get(key) == value
 

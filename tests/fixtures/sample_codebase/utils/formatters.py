@@ -120,15 +120,17 @@ def format_table(
 
     # Header
     if header:
-        header_line = separator + separator.join(
-            f" {col.center(widths[col])} " for col in columns
-        ) + separator
+        header_line = (
+            separator
+            + separator.join(f" {col.center(widths[col])} " for col in columns)
+            + separator
+        )
         lines.append(header_line)
 
         # Separator line
-        sep_line = separator + separator.join(
-            "-" * (widths[col] + 2) for col in columns
-        ) + separator
+        sep_line = (
+            separator + separator.join("-" * (widths[col] + 2) for col in columns) + separator
+        )
         lines.append(sep_line)
 
     # Data rows
@@ -173,6 +175,7 @@ def format_error(
 
     if include_traceback:
         import traceback
+
         tb = traceback.format_exc()
         if tb and tb != "NoneType: None\n":
             parts.append(f"\nTraceback:\n{tb}")

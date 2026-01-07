@@ -6,7 +6,6 @@ These models define the output schema produced by documenter agents
 """
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -23,15 +22,9 @@ class CalleeRef(BaseModel):
         call_type: Type of call (direct, conditional, loop)
     """
 
-    component_id: str = Field(
-        ..., min_length=1, description="ID of called component"
-    )
-    call_site_line: Optional[int] = Field(
-        default=None, ge=1, description="Line number of call"
-    )
-    call_type: CallType = Field(
-        default=CallType.DIRECT, description="Type of call"
-    )
+    component_id: str = Field(..., min_length=1, description="ID of called component")
+    call_site_line: int | None = Field(default=None, ge=1, description="Line number of call")
+    call_type: CallType = Field(default=CallType.DIRECT, description="Type of call")
 
 
 class CallerRef(BaseModel):
@@ -43,15 +36,9 @@ class CallerRef(BaseModel):
         call_type: Type of call
     """
 
-    component_id: str = Field(
-        ..., min_length=1, description="ID of calling component"
-    )
-    call_site_line: Optional[int] = Field(
-        default=None, ge=1, description="Line number in caller"
-    )
-    call_type: CallType = Field(
-        default=CallType.DIRECT, description="Type of call"
-    )
+    component_id: str = Field(..., min_length=1, description="ID of calling component")
+    call_site_line: int | None = Field(default=None, ge=1, description="Line number in caller")
+    call_type: CallType = Field(default=CallType.DIRECT, description="Type of call")
 
 
 class CallGraphSection(BaseModel):
@@ -101,9 +88,7 @@ class DocumenterMetadata(BaseModel):
         description="Agent identifier",
         examples=["A1", "B1"],
     )
-    stream_id: StreamId = Field(
-        ..., description="Stream this agent belongs to"
-    )
+    stream_id: StreamId = Field(..., description="Stream this agent belongs to")
     model: str = Field(
         ...,
         description="Model name used",
@@ -124,7 +109,7 @@ class DocumenterMetadata(BaseModel):
         ge=0,
         description="Topological order position",
     )
-    token_count: Optional[int] = Field(
+    token_count: int | None = Field(
         default=None,
         ge=0,
         description="Tokens consumed",
@@ -150,16 +135,12 @@ class DocumentationOutput(BaseModel):
         description="Documented component ID",
         examples=["module.Class.method"],
     )
-    documentation: ComponentDocumentation = Field(
-        ..., description="Documentation content"
-    )
+    documentation: ComponentDocumentation = Field(..., description="Documentation content")
     call_graph: CallGraphSection = Field(
         default_factory=CallGraphSection,
         description="Call graph information",
     )
-    metadata: DocumenterMetadata = Field(
-        ..., description="Agent metadata"
-    )
+    metadata: DocumenterMetadata = Field(..., description="Agent metadata")
 
     @field_validator("component_id")
     @classmethod
@@ -197,17 +178,11 @@ class StreamOutput(BaseModel):
         default_factory=dict,
         description="Component ID -> Documentation mapping",
     )
-    total_components: int = Field(
-        default=0, ge=0, description="Components processed"
-    )
-    total_tokens: int = Field(
-        default=0, ge=0, description="Tokens consumed"
-    )
-    processing_time_seconds: float = Field(
-        default=0.0, ge=0.0, description="Processing duration"
-    )
+    total_components: int = Field(default=0, ge=0, description="Components processed")
+    total_tokens: int = Field(default=0, ge=0, description="Tokens consumed")
+    processing_time_seconds: float = Field(default=0.0, ge=0.0, description="Processing duration")
 
-    def get_output(self, component_id: str) -> Optional[DocumentationOutput]:
+    def get_output(self, component_id: str) -> DocumentationOutput | None:
         """Get documentation output for a specific component."""
         return self.outputs.get(component_id)
 

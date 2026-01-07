@@ -8,7 +8,7 @@ import json
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -90,7 +90,7 @@ class CheckpointManager:
     def create_checkpoint(
         self,
         orchestrator: "DualStreamOrchestrator",
-        checkpoint_id: Optional[str] = None,
+        checkpoint_id: str | None = None,
     ) -> str:
         """Create a checkpoint from current orchestrator state.
 
@@ -113,9 +113,7 @@ class CheckpointManager:
             component_states=self._extract_component_states(orchestrator),
             stream_a_state=self._extract_stream_state(orchestrator._stream_a),
             stream_b_state=self._extract_stream_state(orchestrator._stream_b),
-            comparison_results=[
-                asdict(r) for r in orchestrator.iteration_history
-            ],
+            comparison_results=[asdict(r) for r in orchestrator.iteration_history],
             beads_tickets=self._extract_beads_state(orchestrator),
             metadata={
                 "total_components": state.total_components,
@@ -172,7 +170,7 @@ class CheckpointManager:
 
         return checkpoints
 
-    def get_latest_checkpoint(self) -> Optional[str]:
+    def get_latest_checkpoint(self) -> str | None:
         """Get the most recent checkpoint ID.
 
         Returns:
@@ -263,7 +261,7 @@ class CheckpointManager:
         checkpoints = self.list_checkpoints()
 
         if len(checkpoints) > self._max_checkpoints:
-            for old_checkpoint in checkpoints[self._max_checkpoints:]:
+            for old_checkpoint in checkpoints[self._max_checkpoints :]:
                 self.delete_checkpoint(old_checkpoint)
 
 
@@ -290,7 +288,7 @@ class StateRecovery:
     async def recover(
         self,
         orchestrator: "DualStreamOrchestrator",
-        checkpoint_id: Optional[str] = None,
+        checkpoint_id: str | None = None,
     ) -> bool:
         """Recover orchestrator state from checkpoint.
 
@@ -388,7 +386,7 @@ class ProgressTracker:
 
     def __init__(self) -> None:
         """Initialize progress tracker."""
-        self._start_time: Optional[datetime] = None
+        self._start_time: datetime | None = None
         self._component_times: dict[str, float] = {}
         self._iteration_times: list[float] = []
 
@@ -417,7 +415,7 @@ class ProgressTracker:
         self,
         remaining_components: int,
         remaining_iterations: int,
-    ) -> Optional[float]:
+    ) -> float | None:
         """Estimate remaining time.
 
         Args:
@@ -430,14 +428,10 @@ class ProgressTracker:
         if not self._component_times:
             return None
 
-        avg_component_time = sum(self._component_times.values()) / len(
-            self._component_times
-        )
+        avg_component_time = sum(self._component_times.values()) / len(self._component_times)
 
         if self._iteration_times:
-            avg_iteration_overhead = sum(self._iteration_times) / len(
-                self._iteration_times
-            )
+            avg_iteration_overhead = sum(self._iteration_times) / len(self._iteration_times)
         else:
             avg_iteration_overhead = 0
 
@@ -446,7 +440,7 @@ class ProgressTracker:
             + remaining_iterations * avg_iteration_overhead
         )
 
-    def get_throughput(self) -> Optional[float]:
+    def get_throughput(self) -> float | None:
         """Get components per second throughput.
 
         Returns:

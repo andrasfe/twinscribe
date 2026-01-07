@@ -8,7 +8,6 @@ Reference: Spec section 3.1
 """
 
 from abc import abstractmethod
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -32,17 +31,13 @@ class DocumenterInput(BaseModel):
         corrections: Corrections to apply from validation
     """
 
-    component: Component = Field(
-        ..., description="Component to document"
-    )
-    source_code: str = Field(
-        ..., description="Source code of the component"
-    )
+    component: Component = Field(..., description="Component to document")
+    source_code: str = Field(..., description="Source code of the component")
     dependency_context: dict[str, DocumentationOutput] = Field(
         default_factory=dict,
         description="Documentation of dependencies (component_id -> doc)",
     )
-    static_analysis_hints: Optional[CallGraph] = Field(
+    static_analysis_hints: CallGraph | None = Field(
         default=None,
         description="Static analysis hints for guidance",
     )
@@ -51,7 +46,7 @@ class DocumenterInput(BaseModel):
         ge=1,
         description="Current iteration number",
     )
-    previous_output: Optional[DocumentationOutput] = Field(
+    previous_output: DocumentationOutput | None = Field(
         default=None,
         description="Previous documentation if re-documenting",
     )
@@ -212,7 +207,7 @@ that don't exist in the code."""
             Formatted user prompt string
         """
         lines = [
-            f"## Component to Document",
+            "## Component to Document",
             f"**ID:** {input_data.component.component_id}",
             f"**Type:** {input_data.component.type.value}",
             f"**Location:** {input_data.component.location.to_reference()}",
@@ -225,44 +220,54 @@ that don't exist in the code."""
         ]
 
         if input_data.component.existing_docstring:
-            lines.extend([
-                "## Existing Docstring",
-                "```",
-                input_data.component.existing_docstring,
-                "```",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## Existing Docstring",
+                    "```",
+                    input_data.component.existing_docstring,
+                    "```",
+                    "",
+                ]
+            )
 
         if input_data.dependency_context:
             lines.append("## Dependency Context (Already Documented)")
             for dep_id, dep_doc in input_data.dependency_context.items():
-                lines.extend([
-                    f"### {dep_id}",
-                    f"Summary: {dep_doc.documentation.summary}",
-                    "",
-                ])
+                lines.extend(
+                    [
+                        f"### {dep_id}",
+                        f"Summary: {dep_doc.documentation.summary}",
+                        "",
+                    ]
+                )
 
         if input_data.static_analysis_hints:
-            lines.extend([
-                "## Static Analysis Hints",
-                f"Known callees: {len(input_data.static_analysis_hints.get_callees(input_data.component.component_id))}",
-                f"Known callers: {len(input_data.static_analysis_hints.get_callers(input_data.component.component_id))}",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## Static Analysis Hints",
+                    f"Known callees: {len(input_data.static_analysis_hints.get_callees(input_data.component.component_id))}",
+                    f"Known callers: {len(input_data.static_analysis_hints.get_callers(input_data.component.component_id))}",
+                    "",
+                ]
+            )
 
         if input_data.corrections:
-            lines.extend([
-                "## Corrections to Apply",
-                "The following corrections were identified by validation:",
-                "",
-            ])
+            lines.extend(
+                [
+                    "## Corrections to Apply",
+                    "The following corrections were identified by validation:",
+                    "",
+                ]
+            )
             for correction in input_data.corrections:
                 lines.append(f"- {correction}")
 
-        lines.extend([
-            "",
-            "Generate comprehensive documentation in the specified JSON format.",
-        ])
+        lines.extend(
+            [
+                "",
+                "Generate comprehensive documentation in the specified JSON format.",
+            ]
+        )
 
         return "\n".join(lines)
 

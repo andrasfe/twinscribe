@@ -61,11 +61,7 @@ class DataProcessor:
     - Method chaining through internal calls
     """
 
-    def __init__(
-        self,
-        config: dict[str, Any] | None = None,
-        strict_mode: bool = False
-    ) -> None:
+    def __init__(self, config: dict[str, Any] | None = None, strict_mode: bool = False) -> None:
         """
         Initialize the data processor.
 
@@ -83,10 +79,7 @@ class DataProcessor:
         """Return the number of cached results."""
         return len(self._cache)
 
-    def register_callback(
-        self,
-        callback: Callable[[ProcessingResult], None]
-    ) -> None:
+    def register_callback(self, callback: Callable[[ProcessingResult], None]) -> None:
         """
         Register a callback to be invoked after processing.
 
@@ -123,10 +116,7 @@ class DataProcessor:
         try:
             validate_input(data)
         except (TypeError, ValueError) as e:
-            result = ProcessingResult(
-                success=False,
-                error=str(e)
-            )
+            result = ProcessingResult(success=False, error=str(e))
             self._notify_callbacks(result)
             return result
 
@@ -135,9 +125,7 @@ class DataProcessor:
 
         # Build result
         result = ProcessingResult(
-            success=True,
-            data=transformed,
-            metrics={"items_processed": len(data)}
+            success=True, data=transformed, metrics={"items_processed": len(data)}
         )
 
         # Cache result
@@ -149,11 +137,7 @@ class DataProcessor:
 
         return result
 
-    async def process_async(
-        self,
-        data: dict[str, Any],
-        delay: float = 0.0
-    ) -> ProcessingResult:
+    async def process_async(self, data: dict[str, Any], delay: float = 0.0) -> ProcessingResult:
         """
         Process input data asynchronously.
 
@@ -170,10 +154,7 @@ class DataProcessor:
         # Reuse synchronous processing
         return self.process(data)
 
-    async def process_batch(
-        self,
-        items: list[dict[str, Any]]
-    ) -> list[ProcessingResult]:
+    async def process_batch(self, items: list[dict[str, Any]]) -> list[ProcessingResult]:
         """
         Process multiple items concurrently.
 
@@ -279,10 +260,7 @@ class StreamingProcessor(DataProcessor):
         super().__init__(**kwargs)
         self.chunk_size = chunk_size
 
-    def process_stream(
-        self,
-        items: list[dict[str, Any]]
-    ):
+    def process_stream(self, items: list[dict[str, Any]]):
         """
         Process items in a streaming fashion.
 
@@ -297,10 +275,7 @@ class StreamingProcessor(DataProcessor):
         for item in items:
             yield self.process(item)
 
-    def process_chunks(
-        self,
-        items: list[dict[str, Any]]
-    ):
+    def process_chunks(self, items: list[dict[str, Any]]):
         """
         Process items in chunks.
 
@@ -311,5 +286,5 @@ class StreamingProcessor(DataProcessor):
             List of ProcessingResults for each chunk
         """
         for i in range(0, len(items), self.chunk_size):
-            chunk = items[i:i + self.chunk_size]
+            chunk = items[i : i + self.chunk_size]
             yield [self.process(item) for item in chunk]

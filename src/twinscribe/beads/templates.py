@@ -5,10 +5,8 @@ Renders ticket content from templates for discrepancy and rebuild tickets.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from string import Template
-from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -47,7 +45,7 @@ class DiscrepancyTemplateData:
     discrepancy_type: str
     stream_a_value: str
     stream_b_value: str
-    static_analysis_value: Optional[str] = None
+    static_analysis_value: str | None = None
     context: str = ""
     iteration: int = 1
     previous_attempts: list[str] = field(default_factory=list)
@@ -85,7 +83,7 @@ class RebuildTemplateData:
     rebuild_priority: int = 0
     suggested_approach: str = ""
     labels: list[str] = field(default_factory=list)
-    epic_key: Optional[str] = None
+    epic_key: str | None = None
 
 
 class TicketTemplate(BaseModel):
@@ -249,7 +247,7 @@ class TicketTemplateEngine:
         """
         self._templates[template.name] = template
 
-    def get_template(self, name: str) -> Optional[TicketTemplate]:
+    def get_template(self, name: str) -> TicketTemplate | None:
         """Get a template by name.
 
         Args:
@@ -464,9 +462,10 @@ class ResolutionParser:
     def __init__(self) -> None:
         """Initialize the parser."""
         import re
+
         self._pattern = re.compile(self.RESOLUTION_PATTERN, re.IGNORECASE | re.DOTALL)
 
-    def parse(self, comment_text: str) -> Optional[tuple[str, str]]:
+    def parse(self, comment_text: str) -> tuple[str, str] | None:
         """Parse a resolution from comment text.
 
         Args:
@@ -495,7 +494,7 @@ class ResolutionParser:
         """
         return self._pattern.search(comment_text) is not None
 
-    def extract_action(self, comment_text: str) -> Optional[str]:
+    def extract_action(self, comment_text: str) -> str | None:
         """Extract just the action from a resolution comment.
 
         Args:
@@ -507,7 +506,7 @@ class ResolutionParser:
         result = self.parse(comment_text)
         return result[0] if result else None
 
-    def extract_content(self, comment_text: str) -> Optional[str]:
+    def extract_content(self, comment_text: str) -> str | None:
         """Extract just the content from a resolution comment.
 
         Args:

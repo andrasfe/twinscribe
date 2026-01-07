@@ -116,7 +116,7 @@ class AdvancedCalculator(Calculator):
         Returns:
             base^exponent, rounded to precision
         """
-        result = base ** exponent
+        result = base**exponent
         return round(result, self.precision)
 
     def compute_sum(self, values: Sequence[float]) -> float:

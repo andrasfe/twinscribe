@@ -6,7 +6,7 @@ through AST analysis, including their documentation structure.
 """
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -31,12 +31,8 @@ class ComponentLocation(BaseModel):
     )
     line_start: int = Field(..., ge=1, description="First line number (1-indexed)")
     line_end: int = Field(..., ge=1, description="Last line number (1-indexed)")
-    column_start: Optional[int] = Field(
-        default=None, ge=0, description="Starting column (0-indexed)"
-    )
-    column_end: Optional[int] = Field(
-        default=None, ge=0, description="Ending column (0-indexed)"
-    )
+    column_start: int | None = Field(default=None, ge=0, description="Starting column (0-indexed)")
+    column_end: int | None = Field(default=None, ge=0, description="Ending column (0-indexed)")
 
     @field_validator("line_end")
     @classmethod
@@ -63,20 +59,16 @@ class ParameterDoc(BaseModel):
     """
 
     name: str = Field(..., min_length=1, description="Parameter name")
-    type: Optional[str] = Field(
+    type: str | None = Field(
         default=None, description="Type annotation", examples=["str", "List[int]"]
     )
-    description: str = Field(
-        default="", description="What this parameter does"
-    )
-    default: Optional[str] = Field(
+    description: str = Field(default="", description="What this parameter does")
+    default: str | None = Field(
         default=None,
         description="Default value as string",
         examples=["None", "'default'", "42"],
     )
-    required: bool = Field(
-        default=True, description="Whether parameter is required"
-    )
+    required: bool = Field(default=True, description="Whether parameter is required")
 
     @field_validator("name")
     @classmethod
@@ -97,12 +89,8 @@ class ReturnDoc(BaseModel):
         description: What is returned and under what conditions
     """
 
-    type: Optional[str] = Field(
-        default=None, description="Return type annotation"
-    )
-    description: str = Field(
-        default="", description="What is returned and when"
-    )
+    type: str | None = Field(default=None, description="Return type annotation")
+    description: str = Field(default="", description="What is returned and when")
 
 
 class ExceptionDoc(BaseModel):
@@ -113,12 +101,8 @@ class ExceptionDoc(BaseModel):
         condition: When this exception is raised
     """
 
-    type: str = Field(
-        ..., min_length=1, description="Exception type name", examples=["ValueError"]
-    )
-    condition: str = Field(
-        default="", description="Condition under which this is raised"
-    )
+    type: str = Field(..., min_length=1, description="Exception type name", examples=["ValueError"])
+    condition: str = Field(default="", description="Condition under which this is raised")
 
 
 class ComponentDocumentation(BaseModel):
@@ -143,27 +127,17 @@ class ComponentDocumentation(BaseModel):
         max_length=200,
         description="One-line description",
     )
-    description: str = Field(
-        default="", description="Detailed explanation"
-    )
+    description: str = Field(default="", description="Detailed explanation")
     parameters: list[ParameterDoc] = Field(
         default_factory=list, description="Parameter documentation"
     )
-    returns: Optional[ReturnDoc] = Field(
-        default=None, description="Return value documentation"
-    )
+    returns: ReturnDoc | None = Field(default=None, description="Return value documentation")
     raises: list[ExceptionDoc] = Field(
         default_factory=list, description="Exceptions that can be raised"
     )
-    examples: list[str] = Field(
-        default_factory=list, description="Usage examples"
-    )
-    notes: Optional[str] = Field(
-        default=None, description="Additional notes or warnings"
-    )
-    see_also: list[str] = Field(
-        default_factory=list, description="Related references"
-    )
+    examples: list[str] = Field(default_factory=list, description="Usage examples")
+    notes: str | None = Field(default=None, description="Additional notes or warnings")
+    see_also: list[str] = Field(default_factory=list, description="Related references")
 
 
 class Component(BaseModel):
@@ -191,17 +165,15 @@ class Component(BaseModel):
         description="Unique identifier in module.Class.method format",
         examples=["mypackage.utils.StringHelper.format_name"],
     )
-    name: str = Field(
-        ..., min_length=1, description="Short name", examples=["format_name"]
-    )
+    name: str = Field(..., min_length=1, description="Short name", examples=["format_name"])
     type: ComponentType = Field(..., description="Type of component")
     location: ComponentLocation = Field(..., description="File location")
-    signature: Optional[str] = Field(
+    signature: str | None = Field(
         default=None,
         description="Full signature string",
         examples=["def format_name(first: str, last: str) -> str"],
     )
-    parent_id: Optional[str] = Field(
+    parent_id: str | None = Field(
         default=None,
         description="ID of containing component",
         examples=["mypackage.utils.StringHelper"],
@@ -210,7 +182,7 @@ class Component(BaseModel):
         default_factory=list,
         description="Component IDs this depends on (import-level)",
     )
-    existing_docstring: Optional[str] = Field(
+    existing_docstring: str | None = Field(
         default=None, description="Original docstring if present"
     )
     is_public: bool = Field(
@@ -224,7 +196,7 @@ class Component(BaseModel):
 
     @field_validator("component_id", "parent_id")
     @classmethod
-    def validate_component_id_format(cls, v: Optional[str]) -> Optional[str]:
+    def validate_component_id_format(cls, v: str | None) -> str | None:
         """Validate component ID follows module.Class.method format."""
         if v is None:
             return v

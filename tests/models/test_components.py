@@ -8,18 +8,19 @@ Tests cover:
 - Component model with all edge cases
 """
 
-import pytest
 from datetime import datetime
+
+import pytest
 from pydantic import ValidationError
 
 from twinscribe.models.base import ComponentType
 from twinscribe.models.components import (
+    Component,
+    ComponentDocumentation,
     ComponentLocation,
+    ExceptionDoc,
     ParameterDoc,
     ReturnDoc,
-    ExceptionDoc,
-    ComponentDocumentation,
-    Component,
 )
 
 

@@ -6,20 +6,18 @@ These tests use mocking to avoid dependency on actual static analysis tools.
 
 import json
 import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from twinscribe.models.call_graph import CallEdge, CallGraph
 from twinscribe.models.base import CallType
+from twinscribe.models.call_graph import CallEdge, CallGraph
 from twinscribe.static_analysis.oracle import (
-    StaticAnalysisOracle,
-    PyCGAnalyzer,
-    Pyan3Analyzer,
-    AnalyzerError,
-    AnalyzerNotAvailableError,
     AnalyzerExecutionError,
+    AnalyzerNotAvailableError,
+    Pyan3Analyzer,
+    PyCGAnalyzer,
+    StaticAnalysisOracle,
 )
 
 
@@ -101,9 +99,7 @@ class TestPyCGAnalyzer:
             ],
         }
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(pycg_output, f)
             f.flush()
 
@@ -140,13 +136,15 @@ class TestPyan3Analyzer:
         """Test parsing pyan3 JSON output."""
         analyzer = Pyan3Analyzer()
 
-        pyan_output = json.dumps({
-            "graph": [
-                {"source": "module.func_a", "target": "module.func_b", "flavor": "uses"},
-                {"source": "module.func_b", "target": "module.func_c", "flavor": "uses"},
-                {"source": "module.Class", "target": "module.func_a", "flavor": "defines"},
-            ]
-        })
+        pyan_output = json.dumps(
+            {
+                "graph": [
+                    {"source": "module.func_a", "target": "module.func_b", "flavor": "uses"},
+                    {"source": "module.func_b", "target": "module.func_c", "flavor": "uses"},
+                    {"source": "module.Class", "target": "module.func_a", "flavor": "defines"},
+                ]
+            }
+        )
 
         graph = analyzer._parse_output(pyan_output)
 
@@ -178,9 +176,7 @@ class TestStaticAnalysisOracle:
 
     @patch.object(PyCGAnalyzer, "is_available", return_value=True)
     @patch.object(PyCGAnalyzer, "analyze")
-    def test_oracle_uses_primary_analyzer(
-        self, mock_analyze, mock_available, tmp_path
-    ):
+    def test_oracle_uses_primary_analyzer(self, mock_analyze, mock_available, tmp_path):
         """Test that oracle uses primary analyzer when available."""
         expected_graph = CallGraph(
             source="pycg",
@@ -223,9 +219,7 @@ class TestStaticAnalysisOracle:
 
     @patch.object(PyCGAnalyzer, "is_available", return_value=False)
     @patch.object(Pyan3Analyzer, "is_available", return_value=False)
-    def test_oracle_returns_empty_when_no_analyzer(
-        self, mock_pyan, mock_pycg, tmp_path
-    ):
+    def test_oracle_returns_empty_when_no_analyzer(self, mock_pyan, mock_pycg, tmp_path):
         """Test that oracle returns empty graph when no analyzer is available."""
         oracle = StaticAnalysisOracle(
             codebase_path=str(tmp_path),
@@ -360,9 +354,7 @@ class TestStaticAnalysisOracle:
 
     @patch.object(PyCGAnalyzer, "is_available", return_value=True)
     @patch.object(PyCGAnalyzer, "analyze")
-    def test_refresh_clears_cache(
-        self, mock_analyze, mock_available, tmp_path
-    ):
+    def test_refresh_clears_cache(self, mock_analyze, mock_available, tmp_path):
         """Test that refresh clears the cached call graph."""
         oracle = StaticAnalysisOracle(
             codebase_path=str(tmp_path),
@@ -436,13 +428,9 @@ class TestStaticAnalysisOracleExtended:
 
     @patch.object(PyCGAnalyzer, "is_available", return_value=True)
     @patch.object(PyCGAnalyzer, "analyze")
-    def test_analyzer_raises_on_invalid_path(
-        self, mock_analyze, mock_available
-    ):
+    def test_analyzer_raises_on_invalid_path(self, mock_analyze, mock_available):
         """Test that analyzer raises error for non-existent path."""
-        mock_analyze.side_effect = AnalyzerExecutionError(
-            "Codebase path not found: /nonexistent"
-        )
+        mock_analyze.side_effect = AnalyzerExecutionError("Codebase path not found: /nonexistent")
 
         oracle = StaticAnalysisOracle(
             codebase_path="/nonexistent",
@@ -635,8 +623,10 @@ class TestStaticAnalysisOracleExtended:
         )
 
         # Mock analyzer to return empty graph for empty codebase
-        with patch.object(PyCGAnalyzer, "is_available", return_value=True), \
-             patch.object(PyCGAnalyzer, "analyze") as mock_analyze:
+        with (
+            patch.object(PyCGAnalyzer, "is_available", return_value=True),
+            patch.object(PyCGAnalyzer, "analyze") as mock_analyze,
+        ):
             mock_analyze.return_value = CallGraph(source="pycg", edges=[])
             graph = oracle.call_graph
             assert graph.edge_count == 0
@@ -652,9 +642,7 @@ class TestStaticAnalysisOracleExtended:
 
     @patch.object(PyCGAnalyzer, "is_available", return_value=True)
     @patch.object(PyCGAnalyzer, "analyze")
-    def test_oracle_with_analyzer_config(
-        self, mock_analyze, mock_available, tmp_path
-    ):
+    def test_oracle_with_analyzer_config(self, mock_analyze, mock_available, tmp_path):
         """Test oracle initialization with custom analyzer config."""
         mock_analyze.return_value = CallGraph(
             source="pycg",
@@ -844,11 +832,13 @@ class TestPyan3AnalyzerAnalysis:
         py_file = tmp_path / "module.py"
         py_file.write_text("def func(): pass")
 
-        pyan_output = json.dumps({
-            "graph": [
-                {"source": "module.func", "target": "module.helper", "flavor": "uses"},
-            ]
-        })
+        pyan_output = json.dumps(
+            {
+                "graph": [
+                    {"source": "module.func", "target": "module.helper", "flavor": "uses"},
+                ]
+            }
+        )
         mock_run.return_value = (pyan_output, "", 0)
 
         analyzer = Pyan3Analyzer()
@@ -928,9 +918,7 @@ class TestPyCGAnalyzerExtended:
         """Test parsing empty output file."""
         analyzer = PyCGAnalyzer()
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             f.write("{}")
             f.flush()
             graph = analyzer._parse_output(f.name)
@@ -942,9 +930,7 @@ class TestPyCGAnalyzerExtended:
         """Test parsing invalid JSON returns empty graph."""
         analyzer = PyCGAnalyzer()
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             f.write("not valid json")
             f.flush()
             graph = analyzer._parse_output(f.name)
@@ -996,14 +982,16 @@ class TestPyan3AnalyzerExtended:
         """Test that only 'uses' flavor edges are included."""
         analyzer = Pyan3Analyzer()
 
-        pyan_output = json.dumps({
-            "graph": [
-                {"source": "a", "target": "b", "flavor": "uses"},
-                {"source": "c", "target": "d", "flavor": "defines"},
-                {"source": "e", "target": "f", "flavor": "uses"},
-                {"source": "g", "target": "h", "flavor": "imports"},
-            ]
-        })
+        pyan_output = json.dumps(
+            {
+                "graph": [
+                    {"source": "a", "target": "b", "flavor": "uses"},
+                    {"source": "c", "target": "d", "flavor": "defines"},
+                    {"source": "e", "target": "f", "flavor": "uses"},
+                    {"source": "g", "target": "h", "flavor": "imports"},
+                ]
+            }
+        )
 
         graph = analyzer._parse_output(pyan_output)
 

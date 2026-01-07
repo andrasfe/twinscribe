@@ -8,7 +8,6 @@ Reference: Spec section 3.3
 """
 
 from abc import abstractmethod
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -31,12 +30,8 @@ class ComparatorInput(BaseModel):
         resolved_discrepancies: Discrepancies resolved since last comparison
     """
 
-    stream_a_output: StreamOutput = Field(
-        ..., description="Stream A validated output"
-    )
-    stream_b_output: StreamOutput = Field(
-        ..., description="Stream B validated output"
-    )
+    stream_a_output: StreamOutput = Field(..., description="Stream A validated output")
+    stream_b_output: StreamOutput = Field(..., description="Stream B validated output")
     ground_truth_call_graph: CallGraph = Field(
         ..., description="Static analysis call graph (ground truth)"
     )
@@ -45,7 +40,7 @@ class ComparatorInput(BaseModel):
         ge=1,
         description="Current iteration number",
     )
-    previous_comparison: Optional[ComparisonResult] = Field(
+    previous_comparison: ComparisonResult | None = Field(
         default=None,
         description="Previous comparison if re-comparing",
     )
@@ -210,8 +205,8 @@ Be thorough - missing a discrepancy is worse than flagging a false positive."""
     async def compare_component(
         self,
         component_id: str,
-        stream_a_doc: Optional[dict],
-        stream_b_doc: Optional[dict],
+        stream_a_doc: dict | None,
+        stream_b_doc: dict | None,
         ground_truth: CallGraph,
     ) -> list[Discrepancy]:
         """Compare documentation for a single component.
@@ -272,7 +267,7 @@ Be thorough - missing a discrepancy is worse than flagging a false positive."""
             f"## Compare Component: {component_id}",
             "",
             "### Stream A Documentation",
-            f"```json",
+            "```json",
             str(stream_a_doc),
             "```",
             "",
@@ -290,28 +285,32 @@ Be thorough - missing a discrepancy is worse than flagging a false positive."""
         if not gt_callees:
             lines.append("_None_")
 
-        lines.extend([
-            "",
-            "**Callers:**",
-        ])
+        lines.extend(
+            [
+                "",
+                "**Callers:**",
+            ]
+        )
 
         for edge in gt_callers:
             lines.append(f"- {edge.caller}")
         if not gt_callers:
             lines.append("_None_")
 
-        lines.extend([
-            "",
-            "## Tasks",
-            "1. Compare summaries and descriptions for semantic equivalence",
-            "2. Compare parameter documentation",
-            "3. Compare return documentation",
-            "4. Compare exception documentation",
-            "5. Compare call graph against ground truth",
-            "6. For each discrepancy, determine resolution or escalate to Beads",
-            "",
-            "Output discrepancies in the specified JSON format.",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Tasks",
+                "1. Compare summaries and descriptions for semantic equivalence",
+                "2. Compare parameter documentation",
+                "3. Compare return documentation",
+                "4. Compare exception documentation",
+                "5. Compare call graph against ground truth",
+                "6. For each discrepancy, determine resolution or escalate to Beads",
+                "",
+                "Output discrepancies in the specified JSON format.",
+            ]
+        )
 
         return "\n".join(lines)
 

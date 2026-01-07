@@ -7,7 +7,6 @@ Manages environment variables and secrets using python-dotenv.
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field, SecretStr
 
@@ -27,23 +26,23 @@ class EnvironmentConfig(BaseModel):
         env_file: Path to .env file
     """
 
-    openrouter_api_key: Optional[SecretStr] = Field(
+    openrouter_api_key: SecretStr | None = Field(
         default=None,
         description="OpenRouter API key",
     )
-    anthropic_api_key: Optional[SecretStr] = Field(
+    anthropic_api_key: SecretStr | None = Field(
         default=None,
         description="Direct Anthropic API key",
     )
-    openai_api_key: Optional[SecretStr] = Field(
+    openai_api_key: SecretStr | None = Field(
         default=None,
         description="Direct OpenAI API key",
     )
-    beads_api_token: Optional[SecretStr] = Field(
+    beads_api_token: SecretStr | None = Field(
         default=None,
         description="Beads API token",
     )
-    beads_username: Optional[str] = Field(
+    beads_username: str | None = Field(
         default=None,
         description="Beads username",
     )
@@ -146,8 +145,8 @@ class EnvironmentLoader:
 
 
 # Global loader instance
-_loader: Optional[EnvironmentLoader] = None
-_config: Optional[EnvironmentConfig] = None
+_loader: EnvironmentLoader | None = None
+_config: EnvironmentConfig | None = None
 
 
 def load_environment(env_file: str = ".env") -> EnvironmentConfig:
@@ -171,7 +170,7 @@ def load_environment(env_file: str = ".env") -> EnvironmentConfig:
     return _config
 
 
-def get_api_key(provider: str) -> Optional[str]:
+def get_api_key(provider: str) -> str | None:
     """Get API key for a provider.
 
     Args:
@@ -183,28 +182,16 @@ def get_api_key(provider: str) -> Optional[str]:
     config = load_environment()
 
     if provider == "openrouter":
-        return (
-            config.openrouter_api_key.get_secret_value()
-            if config.openrouter_api_key
-            else None
-        )
+        return config.openrouter_api_key.get_secret_value() if config.openrouter_api_key else None
     elif provider == "anthropic":
-        return (
-            config.anthropic_api_key.get_secret_value()
-            if config.anthropic_api_key
-            else None
-        )
+        return config.anthropic_api_key.get_secret_value() if config.anthropic_api_key else None
     elif provider == "openai":
-        return (
-            config.openai_api_key.get_secret_value()
-            if config.openai_api_key
-            else None
-        )
+        return config.openai_api_key.get_secret_value() if config.openai_api_key else None
     else:
         return None
 
 
-def get_beads_credentials() -> tuple[Optional[str], Optional[str]]:
+def get_beads_credentials() -> tuple[str | None, str | None]:
     """Get Beads credentials.
 
     Returns:
@@ -213,11 +200,7 @@ def get_beads_credentials() -> tuple[Optional[str], Optional[str]]:
     config = load_environment()
 
     username = config.beads_username
-    token = (
-        config.beads_api_token.get_secret_value()
-        if config.beads_api_token
-        else None
-    )
+    token = config.beads_api_token.get_secret_value() if config.beads_api_token else None
 
     return username, token
 

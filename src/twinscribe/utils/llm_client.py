@@ -19,11 +19,11 @@ import asyncio
 import json
 import logging
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Literal, Optional
+from typing import Any, Literal
 
 import httpx
-from pydantic import BaseModel
 from tenacity import (
     AsyncRetrying,
     RetryError,
@@ -32,8 +32,8 @@ from tenacity import (
     wait_exponential,
 )
 
-from twinscribe.config.environment import get_api_key, load_environment
-from twinscribe.config.models import DEFAULT_MODELS, ModelConfig, ModelTier
+from twinscribe.config.environment import get_api_key
+from twinscribe.config.models import DEFAULT_MODELS, ModelConfig
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ class ModelNotFoundError(LLMClientError):
 class APIError(LLMClientError):
     """Raised for general API errors."""
 
-    def __init__(self, message: str, status_code: Optional[int] = None):
+    def __init__(self, message: str, status_code: int | None = None):
         super().__init__(message)
         self.status_code = status_code
 
@@ -196,9 +196,7 @@ class UsageTracker:
         """
         async with self._lock:
             total_prompt = sum(u.prompt_tokens for u in self._usage_by_model.values())
-            total_completion = sum(
-                u.completion_tokens for u in self._usage_by_model.values()
-            )
+            total_completion = sum(u.completion_tokens for u in self._usage_by_model.values())
             total_cost = sum(u.cost_usd for u in self._usage_by_model.values())
 
             return {
@@ -276,12 +274,12 @@ class AsyncLLMClient:
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         base_url: str = OPENROUTER_BASE_URL,
         timeout: float = 120.0,
         max_retries: int = 3,
         requests_per_minute: int = 60,
-        http_referer: Optional[str] = None,
+        http_referer: str | None = None,
         app_title: str = "TwinScribe",
     ) -> None:
         """Initialize the LLM client.
@@ -303,7 +301,7 @@ class AsyncLLMClient:
         self._usage_tracker = UsageTracker()
         self._http_referer = http_referer
         self._app_title = app_title
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
     async def __aenter__(self) -> AsyncLLMClient:
         """Enter async context."""
@@ -387,19 +385,17 @@ class AsyncLLMClient:
             Cost in USD
         """
         input_cost = (prompt_tokens / 1_000_000) * model_config.cost_per_million_input
-        output_cost = (
-            completion_tokens / 1_000_000
-        ) * model_config.cost_per_million_output
+        output_cost = (completion_tokens / 1_000_000) * model_config.cost_per_million_output
         return input_cost + output_cost
 
     def _build_request_body(
         self,
         model_config: ModelConfig,
         messages: list[Message],
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
         json_mode: bool = False,
-        stop_sequences: Optional[list[str]] = None,
+        stop_sequences: list[str] | None = None,
     ) -> dict[str, Any]:
         """Build the request body for the API call.
 
@@ -459,10 +455,10 @@ class AsyncLLMClient:
         self,
         model: str,
         messages: list[Message],
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
         json_mode: bool = False,
-        stop_sequences: Optional[list[str]] = None,
+        stop_sequences: list[str] | None = None,
         track_usage: bool = True,
     ) -> LLMResponse:
         """Send a message to the LLM and get a response.
@@ -609,9 +605,9 @@ class AsyncLLMClient:
         self,
         model: str,
         messages: list[Message],
-        max_tokens: Optional[int] = None,
-        temperature: Optional[float] = None,
-        stop_sequences: Optional[list[str]] = None,
+        max_tokens: int | None = None,
+        temperature: float | None = None,
+        stop_sequences: list[str] | None = None,
     ) -> AsyncIterator[str]:
         """Send a message and stream the response.
 
@@ -642,17 +638,13 @@ class AsyncLLMClient:
         )
         body["stream"] = True
 
-        async with client.stream(
-            "POST", OPENROUTER_CHAT_ENDPOINT, json=body
-        ) as response:
+        async with client.stream("POST", OPENROUTER_CHAT_ENDPOINT, json=body) as response:
             if response.status_code >= 400:
                 # Read full response for error message
                 content = await response.aread()
                 try:
                     error_data = json.loads(content)
-                    error_msg = error_data.get("error", {}).get(
-                        "message", content.decode()
-                    )
+                    error_msg = error_data.get("error", {}).get("message", content.decode())
                 except Exception:
                     error_msg = content.decode()
 
@@ -685,7 +677,7 @@ class AsyncLLMClient:
         user_prompt: str,
         model: str,
         json_mode: bool = True,
-        max_tokens: Optional[int] = None,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         """Convenience method for documentation generation.
 
@@ -719,7 +711,7 @@ class AsyncLLMClient:
         system_prompt: str,
         documentation: str,
         source_code: str,
-        ground_truth: Optional[str],
+        ground_truth: str | None,
         model: str,
     ) -> LLMResponse:
         """Convenience method for documentation validation.
@@ -821,7 +813,7 @@ class AsyncLLMClient:
 
 def get_documenter_client(
     stream_id: Literal["A", "B"],
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
 ) -> tuple[AsyncLLMClient, str]:
     """Get an LLM client configured for documenter role.
 
@@ -850,7 +842,7 @@ def get_documenter_client(
 
 def get_validator_client(
     stream_id: Literal["A", "B"],
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
 ) -> tuple[AsyncLLMClient, str]:
     """Get an LLM client configured for validator role.
 
@@ -878,7 +870,7 @@ def get_validator_client(
 
 
 def get_comparator_client(
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
 ) -> tuple[AsyncLLMClient, str]:
     """Get an LLM client configured for comparator role.
 

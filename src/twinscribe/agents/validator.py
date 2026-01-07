@@ -8,7 +8,6 @@ Reference: Spec section 3.2
 """
 
 from abc import abstractmethod
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -29,16 +28,12 @@ class ValidatorInput(BaseModel):
         component_ast: Optional AST representation for detailed checks
     """
 
-    documentation: DocumentationOutput = Field(
-        ..., description="Documentation to validate"
-    )
-    source_code: str = Field(
-        ..., description="Original source code"
-    )
+    documentation: DocumentationOutput = Field(..., description="Documentation to validate")
+    source_code: str = Field(..., description="Original source code")
     ground_truth_call_graph: CallGraph = Field(
         ..., description="Static analysis call graph (ground truth)"
     )
-    component_ast: Optional[dict] = Field(
+    component_ast: dict | None = Field(
         default=None,
         description="AST representation for detailed checks",
     )
@@ -240,79 +235,97 @@ Output validation results in the specified JSON schema."""
         if not doc.documentation.parameters:
             lines.append("_None documented_")
 
-        lines.extend([
-            "",
-            "### Returns",
-        ])
+        lines.extend(
+            [
+                "",
+                "### Returns",
+            ]
+        )
         if doc.documentation.returns:
-            lines.append(f"- {doc.documentation.returns.type}: {doc.documentation.returns.description}")
+            lines.append(
+                f"- {doc.documentation.returns.type}: {doc.documentation.returns.description}"
+            )
         else:
             lines.append("_None documented_")
 
-        lines.extend([
-            "",
-            "### Exceptions",
-        ])
+        lines.extend(
+            [
+                "",
+                "### Exceptions",
+            ]
+        )
         for exc in doc.documentation.raises:
             lines.append(f"- {exc.type}: {exc.condition}")
         if not doc.documentation.raises:
             lines.append("_None documented_")
 
-        lines.extend([
-            "",
-            "### Documented Call Graph",
-            "**Callees (this component calls):**",
-        ])
+        lines.extend(
+            [
+                "",
+                "### Documented Call Graph",
+                "**Callees (this component calls):**",
+            ]
+        )
         for callee in doc.call_graph.callees:
-            lines.append(f"- {callee.component_id} (line {callee.call_site_line}, {callee.call_type.value})")
+            lines.append(
+                f"- {callee.component_id} (line {callee.call_site_line}, {callee.call_type.value})"
+            )
         if not doc.call_graph.callees:
             lines.append("_None_")
 
-        lines.extend([
-            "",
-            "**Callers (call this component):**",
-        ])
+        lines.extend(
+            [
+                "",
+                "**Callers (call this component):**",
+            ]
+        )
         for caller in doc.call_graph.callers:
             lines.append(f"- {caller.component_id} (line {caller.call_site_line})")
         if not doc.call_graph.callers:
             lines.append("_None_")
 
-        lines.extend([
-            "",
-            "## Source Code",
-            "```python",
-            input_data.source_code,
-            "```",
-            "",
-            "## Ground Truth Call Graph (Static Analysis)",
-            "**Callees:**",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Source Code",
+                "```python",
+                input_data.source_code,
+                "```",
+                "",
+                "## Ground Truth Call Graph (Static Analysis)",
+                "**Callees:**",
+            ]
+        )
         for edge in gt_callees:
             lines.append(f"- {edge.callee} (line {edge.call_site_line})")
         if not gt_callees:
             lines.append("_None_")
 
-        lines.extend([
-            "",
-            "**Callers:**",
-        ])
+        lines.extend(
+            [
+                "",
+                "**Callers:**",
+            ]
+        )
         for edge in gt_callers:
             lines.append(f"- {edge.caller} (line {edge.call_site_line})")
         if not gt_callers:
             lines.append("_None_")
 
-        lines.extend([
-            "",
-            "## Validation Tasks",
-            "1. Check all parameters are documented",
-            "2. Check return value is documented (if function returns something)",
-            "3. Check all exceptions are documented",
-            "4. Compare documented callees against ground truth",
-            "5. Compare documented callers against ground truth",
-            "6. Apply corrections for any call graph discrepancies",
-            "",
-            "Output validation results in the specified JSON format.",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Validation Tasks",
+                "1. Check all parameters are documented",
+                "2. Check return value is documented (if function returns something)",
+                "3. Check all exceptions are documented",
+                "4. Compare documented callees against ground truth",
+                "5. Compare documented callers against ground truth",
+                "6. Apply corrections for any call graph discrepancies",
+                "",
+                "Output validation results in the specified JSON format.",
+            ]
+        )
 
         return "\n".join(lines)
 

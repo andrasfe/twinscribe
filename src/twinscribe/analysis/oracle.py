@@ -6,17 +6,13 @@ analyzer selection, fallback logic, and caching.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
 from twinscribe.analysis.analyzer import (
-    Analyzer,
-    AnalyzerConfig,
-    AnalyzerError,
     AnalyzerType,
     Language,
 )
@@ -44,7 +40,7 @@ class OracleConfig(BaseModel):
         default=Language.PYTHON,
         description="Primary codebase language",
     )
-    primary_analyzer: Optional[AnalyzerType] = Field(
+    primary_analyzer: AnalyzerType | None = Field(
         default=None,
         description="Primary analyzer (auto-selected if None)",
     )
@@ -162,7 +158,7 @@ class StaticAnalysisOracle(ABC):
     def __init__(
         self,
         codebase_path: str | Path,
-        config: Optional[OracleConfig] = None,
+        config: OracleConfig | None = None,
     ) -> None:
         """Initialize the oracle.
 
@@ -172,7 +168,7 @@ class StaticAnalysisOracle(ABC):
         """
         self._codebase_path = Path(codebase_path)
         self._config = config or OracleConfig()
-        self._call_graph: Optional[CallGraph] = None
+        self._call_graph: CallGraph | None = None
         self._cache: dict[str, CacheEntry] = {}
         self._stats = OracleStats()
         self._normalizer = CallGraphNormalizer(self._config.normalization)
@@ -216,7 +212,7 @@ class StaticAnalysisOracle(ABC):
         return self._initialized
 
     @property
-    def call_graph(self) -> Optional[CallGraph]:
+    def call_graph(self) -> CallGraph | None:
         """Get cached call graph (may be None if not yet analyzed)."""
         return self._call_graph
 
@@ -400,15 +396,22 @@ class OracleFactory:
     """Factory for creating StaticAnalysisOracle instances.
 
     Provides convenient methods to create oracles with common configurations.
+
+    Usage:
+        oracle = OracleFactory.for_python("/path/to/project")
+        await oracle.initialize()
+        callees = oracle.get_callees("module.function")
     """
 
     @staticmethod
     def for_python(
         codebase_path: str | Path,
         cache_enabled: bool = True,
-        strip_prefix: Optional[str] = None,
+        strip_prefix: str | None = None,
     ) -> "StaticAnalysisOracle":
         """Create oracle configured for Python analysis.
+
+        Uses PyCG as primary analyzer with AST-based fallback.
 
         Args:
             codebase_path: Path to Python codebase
@@ -418,6 +421,8 @@ class OracleFactory:
         Returns:
             Configured oracle instance
         """
+        from twinscribe.analysis.default_oracle import DefaultStaticAnalysisOracle
+
         config = OracleConfig(
             language=Language.PYTHON,
             primary_analyzer=AnalyzerType.PYCG,
@@ -429,8 +434,7 @@ class OracleFactory:
                 include_stdlib=False,
             ),
         )
-        # Return concrete implementation (to be created)
-        raise NotImplementedError("Concrete implementation required")
+        return DefaultStaticAnalysisOracle(codebase_path, config)
 
     @staticmethod
     def for_java(
@@ -439,20 +443,25 @@ class OracleFactory:
     ) -> "StaticAnalysisOracle":
         """Create oracle configured for Java analysis.
 
+        Note: Java analyzers not yet implemented.
+
         Args:
             codebase_path: Path to Java codebase
             cache_enabled: Enable caching
 
         Returns:
             Configured oracle instance
+
+        Raises:
+            NotImplementedError: Java analyzers not yet available
         """
-        config = OracleConfig(
+        OracleConfig(
             language=Language.JAVA,
             primary_analyzer=AnalyzerType.JAVA_CALLGRAPH,
             fallback_analyzers=[AnalyzerType.WALA],
             cache_enabled=cache_enabled,
         )
-        raise NotImplementedError("Concrete implementation required")
+        raise NotImplementedError("Java analyzer not yet implemented. Contributions welcome!")
 
     @staticmethod
     def for_typescript(
@@ -461,17 +470,22 @@ class OracleFactory:
     ) -> "StaticAnalysisOracle":
         """Create oracle configured for TypeScript analysis.
 
+        Note: TypeScript analyzers not yet implemented.
+
         Args:
             codebase_path: Path to TypeScript codebase
             cache_enabled: Enable caching
 
         Returns:
             Configured oracle instance
+
+        Raises:
+            NotImplementedError: TypeScript analyzers not yet available
         """
-        config = OracleConfig(
+        OracleConfig(
             language=Language.TYPESCRIPT,
             primary_analyzer=AnalyzerType.TS_CALLGRAPH,
             fallback_analyzers=[AnalyzerType.SOURCETRAIL],
             cache_enabled=cache_enabled,
         )
-        raise NotImplementedError("Concrete implementation required")
+        raise NotImplementedError("TypeScript analyzer not yet implemented. Contributions welcome!")

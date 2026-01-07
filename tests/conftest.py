@@ -13,13 +13,12 @@ Fixture Categories:
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from collections.abc import Generator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, AsyncGenerator, Generator
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 
 # =============================================================================
 # Path Fixtures
@@ -69,12 +68,8 @@ class MockLLMResponse:
         self.content = content
         self.model = model
         self.id = "mock-response-id"
-        self.created = int(datetime.now(timezone.utc).timestamp())
-        self.usage = MagicMock(
-            prompt_tokens=100,
-            completion_tokens=50,
-            total_tokens=150
-        )
+        self.created = int(datetime.now(UTC).timestamp())
+        self.usage = MagicMock(prompt_tokens=100, completion_tokens=50, total_tokens=150)
 
     @property
     def choices(self) -> list:
@@ -108,9 +103,7 @@ def mock_openai_client() -> MagicMock:
     client = MagicMock()
 
     # Default response
-    default_response = MockLLMResponse(
-        content='{"status": "success", "message": "Mock response"}'
-    )
+    default_response = MockLLMResponse(content='{"status": "success", "message": "Mock response"}')
     client.chat.completions.create = AsyncMock(return_value=default_response)
 
     return client
@@ -147,68 +140,65 @@ def mock_documenter_response() -> dict:
         "documentation": {
             "summary": "Process input data and return results.",
             "description": "A comprehensive method that processes the given input data, "
-                          "performs validation, and returns the transformed results.",
+            "performs validation, and returns the transformed results.",
             "parameters": [
                 {
                     "name": "data",
                     "type": "dict[str, Any]",
                     "description": "Input data to process",
-                    "default": None
+                    "default": None,
                 },
                 {
                     "name": "options",
                     "type": "ProcessingOptions | None",
                     "description": "Optional processing configuration",
-                    "default": "None"
-                }
+                    "default": "None",
+                },
             ],
             "returns": {
                 "type": "ProcessingResult",
-                "description": "The processed result containing transformed data"
+                "description": "The processed result containing transformed data",
             },
             "raises": [
-                {
-                    "type": "ValueError",
-                    "condition": "When data is empty or malformed"
-                },
+                {"type": "ValueError", "condition": "When data is empty or malformed"},
                 {
                     "type": "ProcessingError",
-                    "condition": "When processing fails due to invalid options"
-                }
+                    "condition": "When processing fails due to invalid options",
+                },
             ],
             "examples": [
                 'result = sample.sample_method({"key": "value"})',
-                'result = sample.sample_method(data, options=ProcessingOptions(strict=True))'
-            ]
+                "result = sample.sample_method(data, options=ProcessingOptions(strict=True))",
+            ],
         },
         "call_graph": {
             "callers": [
                 {
                     "component_id": "sample_module.Client.execute",
                     "call_site_line": 45,
-                    "call_type": "direct"
+                    "call_type": "direct",
                 }
             ],
             "callees": [
                 {
                     "component_id": "sample_module.Validator.validate",
                     "call_site_line": 12,
-                    "call_type": "direct"
+                    "call_type": "direct",
                 },
                 {
                     "component_id": "sample_module.Transformer.transform",
                     "call_site_line": 15,
-                    "call_type": "conditional"
-                }
-            ]
+                    "call_type": "conditional",
+                },
+            ],
         },
         "metadata": {
             "agent_id": "A1",
             "model": "claude-sonnet-4-5-20250929",
             "timestamp": "2026-01-06T10:00:00Z",
             "confidence": 0.92,
-            "processing_order": 1
-        }
+            "processing_order": 1,
+        },
     }
 
 
@@ -220,30 +210,26 @@ def mock_validation_response() -> dict:
     return {
         "component_id": "sample_module.SampleClass.sample_method",
         "validation_result": "pass",
-        "completeness": {
-            "score": 0.95,
-            "missing_elements": [],
-            "extra_elements": []
-        },
+        "completeness": {"score": 0.95, "missing_elements": [], "extra_elements": []},
         "call_graph_accuracy": {
             "score": 0.98,
             "verified_callees": [
                 "sample_module.Validator.validate",
-                "sample_module.Transformer.transform"
+                "sample_module.Transformer.transform",
             ],
             "missing_callees": [],
             "false_callees": [],
             "verified_callers": ["sample_module.Client.execute"],
             "missing_callers": [],
-            "false_callers": []
+            "false_callers": [],
         },
         "corrections_applied": [],
         "metadata": {
             "agent_id": "A2",
             "model": "claude-haiku-4-5-20251001",
             "static_analyzer": "pycg",
-            "timestamp": "2026-01-06T10:01:00Z"
-        }
+            "timestamp": "2026-01-06T10:01:00Z",
+        },
     }
 
 
@@ -260,7 +246,7 @@ def mock_comparison_response() -> dict:
             "identical": 8,
             "discrepancies": 2,
             "resolved_by_ground_truth": 1,
-            "requires_human_review": 1
+            "requires_human_review": 1,
         },
         "discrepancies": [
             {
@@ -272,20 +258,20 @@ def mock_comparison_response() -> dict:
                 "ground_truth": {"callee": "utils.helper", "line": 20},
                 "resolution": "accept_stream_a",
                 "confidence": 0.99,
-                "requires_beads": False
+                "requires_beads": False,
             }
         ],
         "convergence_status": {
             "converged": False,
             "blocking_discrepancies": 1,
-            "recommendation": "continue_iteration"
+            "recommendation": "continue_iteration",
         },
         "metadata": {
             "agent_id": "C",
             "model": "claude-opus-4-5-20251101",
             "timestamp": "2026-01-06T10:02:00Z",
-            "comparison_duration_ms": 2500
-        }
+            "comparison_duration_ms": 2500,
+        },
     }
 
 
@@ -427,20 +413,20 @@ def sample_call_graph() -> dict:
                 "caller": "sample_module.Calculator.multiply",
                 "callee": "sample_module.helper_function",
                 "call_site_line": 22,
-                "call_type": "direct"
+                "call_type": "direct",
             },
             {
                 "caller": "sample_module.AdvancedCalculator.compute_complex",
                 "callee": "sample_module.Calculator.add",
                 "call_site_line": 35,
-                "call_type": "loop"
+                "call_type": "loop",
             },
             {
                 "caller": "sample_module.AdvancedCalculator.compute_complex",
                 "callee": "sample_module.Calculator.multiply",
                 "call_site_line": 36,
-                "call_type": "direct"
-            }
+                "call_type": "direct",
+            },
         ],
         "nodes": [
             "sample_module.helper_function",
@@ -448,8 +434,8 @@ def sample_call_graph() -> dict:
             "sample_module.Calculator.add",
             "sample_module.Calculator.multiply",
             "sample_module.AdvancedCalculator.power",
-            "sample_module.AdvancedCalculator.compute_complex"
-        ]
+            "sample_module.AdvancedCalculator.compute_complex",
+        ],
     }
 
 
@@ -471,39 +457,31 @@ def mock_config() -> dict:
         "codebase": {
             "path": "/tmp/test_codebase",
             "language": "python",
-            "exclude_patterns": ["**/test_*", "**/tests/**"]
+            "exclude_patterns": ["**/test_*", "**/tests/**"],
         },
         "models": {
             "stream_a": {
                 "documenter": "claude-sonnet-4-5-20250929",
-                "validator": "claude-haiku-4-5-20251001"
+                "validator": "claude-haiku-4-5-20251001",
             },
-            "stream_b": {
-                "documenter": "gpt-4o",
-                "validator": "gpt-4o-mini"
-            },
-            "comparator": "claude-opus-4-5-20251101"
+            "stream_b": {"documenter": "gpt-4o", "validator": "gpt-4o-mini"},
+            "comparator": "claude-opus-4-5-20251101",
         },
         "convergence": {
             "max_iterations": 5,
             "call_graph_match_threshold": 0.98,
-            "documentation_similarity_threshold": 0.95
+            "documentation_similarity_threshold": 0.95,
         },
         "beads": {
             "server": "https://test.atlassian.net",
             "project": "TEST_DOC",
-            "rebuild_project": "TEST_REBUILD"
+            "rebuild_project": "TEST_REBUILD",
         },
-        "static_analysis": {
-            "python": {
-                "tool": "pycg",
-                "fallback": "pyan3"
-            }
-        },
+        "static_analysis": {"python": {"tool": "pycg", "fallback": "pyan3"}},
         "output": {
             "documentation_path": "./output/documentation.json",
-            "call_graph_path": "./output/call_graph.json"
-        }
+            "call_graph_path": "./output/call_graph.json",
+        },
     }
 
 
@@ -516,7 +494,7 @@ def mock_env_vars(monkeypatch: pytest.MonkeyPatch) -> dict:
         "OPENAI_API_KEY": "test-openai-key-12345",
         "BEADS_API_TOKEN": "test-beads-token-12345",
         "BEADS_SERVER": "https://test.atlassian.net",
-        "BEADS_USERNAME": "test@example.com"
+        "BEADS_USERNAME": "test@example.com",
     }
     for key, value in env_vars.items():
         monkeypatch.setenv(key, value)
@@ -573,7 +551,7 @@ def sample_discrepancy_ticket() -> dict:
 
 Please review and indicate which interpretation is correct.
 """,
-        "labels": ["ai-documentation", "documentation_content", "iteration-1"]
+        "labels": ["ai-documentation", "documentation_content", "iteration-1"],
     }
 
 
@@ -629,7 +607,7 @@ def sample_component_location() -> dict:
         "line_start": 10,
         "line_end": 25,
         "column_start": 0,
-        "column_end": None
+        "column_end": None,
     }
 
 
@@ -640,7 +618,7 @@ def sample_parameter_doc() -> dict:
         "name": "data",
         "type": "dict[str, Any]",
         "description": "Input data to process",
-        "default": None
+        "default": None,
     }
 
 
@@ -657,14 +635,14 @@ def sample_component() -> dict:
             "line_start": 15,
             "line_end": 30,
             "column_start": 4,
-            "column_end": None
+            "column_end": None,
         },
         "source_code": "def process(self, data: dict) -> dict:\n    ...",
         "parent_class": "SampleClass",
         "decorators": [],
         "is_async": False,
         "is_generator": False,
-        "docstring": "Process input data."
+        "docstring": "Process input data.",
     }
 
 

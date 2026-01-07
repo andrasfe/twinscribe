@@ -146,6 +146,83 @@ static_analysis:
   cache_ttl_hours: 24
 
 # =============================================================================
+# CrossCheck Verification Framework
+# =============================================================================
+# The CrossCheck Verification Framework validates documentation quality
+# and accuracy using multiple verification strategies.
+verification:
+  # Enable/disable the verification framework (disabled by default)
+  enabled: ${VERIFICATION_ENABLED:false}
+
+  # Verification strategies to run
+  # Available: qa_interrogation, masked_reconstruction, scenario_walkthrough,
+  #            mutation_detection, impact_analysis, adversarial_review, test_generation
+  enabled_strategies:
+    - qa_interrogation
+    - masked_reconstruction
+    - scenario_walkthrough
+    - mutation_detection
+    - impact_analysis
+    - adversarial_review
+    - test_generation
+
+  # Score thresholds for passing verification
+  thresholds:
+    min_overall_quality: 0.85   # Minimum overall quality score to pass
+    min_qa_score: 0.80          # Minimum Q&A interrogation score
+    min_reconstruction_score: 0.75  # Minimum masked reconstruction score
+    min_scenario_score: 0.85    # Minimum scenario walkthrough score
+    min_test_pass_rate: 0.90    # Minimum generated test pass rate
+
+  # Q&A Interrogation Strategy
+  # Generates questions about code behavior and validates documentation answers
+  qa_interrogation:
+    questions_per_component: 5
+    categories:
+      - return_value
+      - error_handling
+      - edge_case
+      - call_flow
+
+  # Masked Reconstruction Strategy
+  # Masks code elements and validates documentation completeness
+  masked_reconstruction:
+    mask_ratio: 0.3
+    mask_types:
+      - constants
+      - conditions
+      - returns
+
+  # Scenario Walkthrough Strategy
+  # Creates usage scenarios to validate documentation accuracy
+  scenario_walkthrough:
+    scenarios_per_component: 3
+    types:
+      - happy_path
+      - error_path
+      - edge_case
+
+  # Mutation Detection Strategy
+  # Introduces mutations to validate documentation sensitivity
+  mutation_detection:
+    mutations_per_component: 5
+    mutation_types:
+      - boundary
+      - off_by_one
+      - null_handling
+
+  # Adversarial Review Strategy
+  # Uses adversarial model to find documentation issues
+  adversarial_review:
+    max_findings_per_component: 10
+
+  # Test Generation Strategy
+  # Generates tests from documentation to validate accuracy
+  test_generation:
+    tests_per_component: 10
+    run_generated_tests: true
+
+# =============================================================================
 # Output Configuration
 # =============================================================================
 output:
@@ -163,10 +240,32 @@ output:
   create_dirs: true
 
 # =============================================================================
+# Logging Configuration
+# =============================================================================
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: ${TWINSCRIBE_LOG_LEVEL:INFO}
+
+  # Log format (Python logging format string)
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+  # Log file path (optional, leave empty for stdout only)
+  file: ${TWINSCRIBE_LOG_FILE:}
+
+  # Output logs as JSON (for structured logging / log aggregation)
+  json_output: false
+
+  # Include timestamp in log output
+  include_timestamp: true
+
+  # Include module name in log output
+  include_module: true
+
+# =============================================================================
 # Runtime Options
 # =============================================================================
 # Enable debug mode (verbose logging)
-debug: false
+debug: ${TWINSCRIBE_DEBUG:false}
 
 # Dry run mode (don't make changes, just report what would happen)
-dry_run: false
+dry_run: ${TWINSCRIBE_DRY_RUN:false}

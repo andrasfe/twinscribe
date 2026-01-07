@@ -6,7 +6,6 @@ as defined in spec section 4.2.
 """
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -157,9 +156,7 @@ class ConvergenceReport(BaseModel):
         remaining_discrepancies: Unresolved discrepancy IDs
     """
 
-    total_iterations: int = Field(
-        default=0, ge=0, description="Iterations performed"
-    )
+    total_iterations: int = Field(default=0, ge=0, description="Iterations performed")
     final_status: str = Field(
         default="pending",
         description="Final convergence status",
@@ -173,12 +170,8 @@ class ConvergenceReport(BaseModel):
         default_factory=ConvergenceCriteria,
         description="Criteria used",
     )
-    started_at: Optional[datetime] = Field(
-        default=None, description="Run start time"
-    )
-    completed_at: Optional[datetime] = Field(
-        default=None, description="Run end time"
-    )
+    started_at: datetime | None = Field(default=None, description="Run start time")
+    completed_at: datetime | None = Field(default=None, description="Run end time")
     forced_convergence: bool = Field(
         default=False,
         description="True if max iterations reached",
@@ -190,7 +183,7 @@ class ConvergenceReport(BaseModel):
 
     @computed_field
     @property
-    def duration_seconds(self) -> Optional[float]:
+    def duration_seconds(self) -> float | None:
         """Total duration of the run in seconds."""
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()
@@ -207,6 +200,6 @@ class ConvergenceReport(BaseModel):
         self.history.append(entry)
         self.total_iterations = len(self.history)
 
-    def get_latest_entry(self) -> Optional[ConvergenceHistoryEntry]:
+    def get_latest_entry(self) -> ConvergenceHistoryEntry | None:
         """Get the most recent iteration entry."""
         return self.history[-1] if self.history else None

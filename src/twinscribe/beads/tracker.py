@@ -7,9 +7,9 @@ Maps Beads issues to discrepancies and tracks resolution status.
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class TicketStatus(str, Enum):
@@ -51,13 +51,13 @@ class TrackedTicket:
     ticket_key: str
     ticket_type: TicketType
     status: TicketStatus = TicketStatus.PENDING
-    discrepancy_id: Optional[str] = None
-    component_id: Optional[str] = None
+    discrepancy_id: str | None = None
+    component_id: str | None = None
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
-    resolution_text: Optional[str] = None
-    resolution_action: Optional[str] = None
-    timeout_at: Optional[datetime] = None
+    resolution_text: str | None = None
+    resolution_action: str | None = None
+    timeout_at: datetime | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def is_terminal(self) -> bool:
@@ -111,11 +111,11 @@ class TicketQuery(BaseModel):
         include_terminal: Include terminal state tickets
     """
 
-    ticket_keys: Optional[list[str]] = None
-    ticket_type: Optional[TicketType] = None
-    status: Optional[list[TicketStatus]] = None
-    component_id: Optional[str] = None
-    discrepancy_id: Optional[str] = None
+    ticket_keys: list[str] | None = None
+    ticket_type: TicketType | None = None
+    status: list[TicketStatus] | None = None
+    component_id: str | None = None
+    discrepancy_id: str | None = None
     include_terminal: bool = False
 
 
@@ -150,10 +150,10 @@ class TicketTracker:
         self,
         ticket_key: str,
         ticket_type: TicketType,
-        discrepancy_id: Optional[str] = None,
-        component_id: Optional[str] = None,
-        timeout_at: Optional[datetime] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        discrepancy_id: str | None = None,
+        component_id: str | None = None,
+        timeout_at: datetime | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> TrackedTicket:
         """Start tracking a ticket.
 
@@ -197,7 +197,7 @@ class TicketTracker:
 
         return ticket
 
-    def get(self, ticket_key: str) -> Optional[TrackedTicket]:
+    def get(self, ticket_key: str) -> TrackedTicket | None:
         """Get a tracked ticket by key.
 
         Args:
@@ -208,7 +208,7 @@ class TicketTracker:
         """
         return self._tickets.get(ticket_key)
 
-    def get_by_discrepancy(self, discrepancy_id: str) -> Optional[TrackedTicket]:
+    def get_by_discrepancy(self, discrepancy_id: str) -> TrackedTicket | None:
         """Get ticket by discrepancy ID.
 
         Args:
@@ -295,16 +295,13 @@ class TicketTracker:
         """
         now = datetime.utcnow()
         pending = self.get_pending_tickets()
-        return [
-            t for t in pending
-            if t.timeout_at and t.timeout_at <= now
-        ]
+        return [t for t in pending if t.timeout_at and t.timeout_at <= now]
 
     def update_status(
         self,
         ticket_key: str,
         status: TicketStatus,
-    ) -> Optional[TrackedTicket]:
+    ) -> TrackedTicket | None:
         """Update ticket status.
 
         Args:
@@ -325,7 +322,7 @@ class TicketTracker:
         ticket_key: str,
         resolution_text: str,
         resolution_action: str,
-    ) -> Optional[TrackedTicket]:
+    ) -> TrackedTicket | None:
         """Update ticket with resolution.
 
         Args:
@@ -341,7 +338,7 @@ class TicketTracker:
             ticket.mark_resolved(resolution_text, resolution_action)
         return ticket
 
-    def mark_applied(self, ticket_key: str) -> Optional[TrackedTicket]:
+    def mark_applied(self, ticket_key: str) -> TrackedTicket | None:
         """Mark ticket resolution as applied.
 
         Args:
@@ -355,7 +352,7 @@ class TicketTracker:
             ticket.mark_applied()
         return ticket
 
-    def expire_ticket(self, ticket_key: str) -> Optional[TrackedTicket]:
+    def expire_ticket(self, ticket_key: str) -> TrackedTicket | None:
         """Mark ticket as expired.
 
         Args:
@@ -369,7 +366,7 @@ class TicketTracker:
             ticket.mark_expired()
         return ticket
 
-    def remove(self, ticket_key: str) -> Optional[TrackedTicket]:
+    def remove(self, ticket_key: str) -> TrackedTicket | None:
         """Remove a ticket from tracking.
 
         Args:
@@ -409,9 +406,7 @@ class TicketTracker:
 
         type_counts = {}
         for ticket_type in TicketType:
-            type_counts[ticket_type.value] = sum(
-                1 for t in tickets if t.ticket_type == ticket_type
-            )
+            type_counts[ticket_type.value] = sum(1 for t in tickets if t.ticket_type == ticket_type)
 
         return {
             "total_tickets": len(tickets),

@@ -23,25 +23,34 @@ from twinscribe.agents.base import (
     AgentMetrics,
     BaseAgent,
 )
+from twinscribe.agents.comparator import (
+    ComparatorAgent,
+    ComparatorConfig,
+    ComparatorInput,
+)
+from twinscribe.agents.comparator_impl import (
+    ConcreteComparatorAgent,
+    create_comparator_agent,
+)
 from twinscribe.agents.documenter import (
     DocumenterAgent,
-    DocumenterInput,
     DocumenterConfig,
+    DocumenterInput,
+)
+from twinscribe.agents.stream import (
+    ComponentProcessingResult,
+    ConcreteDocumentationStream,
+    ConcreteDocumenterAgent,
+    ConcreteValidatorAgent,
+    DocumentationStream,
+    StreamConfig,
+    StreamProgressCallback,
+    StreamResult,
 )
 from twinscribe.agents.validator import (
     ValidatorAgent,
-    ValidatorInput,
     ValidatorConfig,
-)
-from twinscribe.agents.comparator import (
-    ComparatorAgent,
-    ComparatorInput,
-    ComparatorConfig,
-)
-from twinscribe.agents.stream import (
-    DocumentationStream,
-    StreamConfig,
-    StreamResult,
+    ValidatorInput,
 )
 
 __all__ = [
@@ -53,16 +62,23 @@ __all__ = [
     "DocumenterAgent",
     "DocumenterInput",
     "DocumenterConfig",
+    "ConcreteDocumenterAgent",
     # Validator
     "ValidatorAgent",
     "ValidatorInput",
     "ValidatorConfig",
+    "ConcreteValidatorAgent",
     # Comparator
     "ComparatorAgent",
     "ComparatorInput",
     "ComparatorConfig",
+    "ConcreteComparatorAgent",
+    "create_comparator_agent",
     # Stream
     "DocumentationStream",
+    "ConcreteDocumentationStream",
     "StreamConfig",
     "StreamResult",
+    "StreamProgressCallback",
+    "ComponentProcessingResult",
 ]

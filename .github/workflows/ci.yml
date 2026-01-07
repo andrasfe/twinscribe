@@ -7,7 +7,7 @@ on:
     branches: [main, master, develop]
 
 env:
-  PYTHON_VERSION: "3.11"
+  PYTHON_VERSION: "3.12"
 
 jobs:
   lint:
@@ -96,7 +96,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
-        if: matrix.python-version == '3.11'
+        if: matrix.python-version == '3.12'
         with:
           files: ./coverage.xml
           fail_ci_if_error: false
@@ -131,7 +131,6 @@ jobs:
           name: dist
           path: dist/
 
-  # Security scan job (optional but recommended)
   security:
     name: Security Scan
     runs-on: ubuntu-latest

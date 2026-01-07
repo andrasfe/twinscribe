@@ -8,7 +8,7 @@ for all agents in the documentation system.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Generic, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -33,7 +33,7 @@ class AgentConfig(BaseModel):
     """
 
     agent_id: str = Field(..., description="Agent identifier")
-    stream_id: Optional[StreamId] = Field(
+    stream_id: StreamId | None = Field(
         default=None,
         description="Stream identifier (None for comparator)",
     )
@@ -102,8 +102,8 @@ class AgentMetrics:
     cost_total: float = 0.0
     errors: int = 0
     avg_latency_ms: float = 0.0
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
     _latencies: list[float] = field(default_factory=list)
 
     def record_request(
@@ -133,7 +133,7 @@ class AgentMetrics:
         self.errors += 1
 
     @property
-    def duration_seconds(self) -> Optional[float]:
+    def duration_seconds(self) -> float | None:
         """Total processing duration."""
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()
@@ -264,12 +264,8 @@ class BaseAgent(ABC, Generic[InputT, OutputT]):
         Returns:
             Cost in USD
         """
-        input_cost = (
-            input_tokens * self._config.cost_per_million_input / 1_000_000
-        )
-        output_cost = (
-            output_tokens * self._config.cost_per_million_output / 1_000_000
-        )
+        input_cost = input_tokens * self._config.cost_per_million_input / 1_000_000
+        output_cost = output_tokens * self._config.cost_per_million_output / 1_000_000
         return input_cost + output_cost
 
 
@@ -287,7 +283,7 @@ class LLMClient(ABC):
         system_prompt: str,
         max_tokens: int,
         temperature: float,
-        response_format: Optional[dict[str, Any]] = None,
+        response_format: dict[str, Any] | None = None,
     ) -> "LLMResponse":
         """Generate a completion.
 

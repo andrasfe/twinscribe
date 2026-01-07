@@ -6,7 +6,7 @@ as specified in section 3.3 of the specification.
 """
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -30,7 +30,7 @@ class BeadsTicketRef(BaseModel):
         description="Priority level",
         examples=["Low", "Medium", "High", "Critical"],
     )
-    ticket_key: Optional[str] = Field(
+    ticket_key: str | None = Field(
         default=None,
         description="Beads key once created",
         examples=["LEGACY-123"],
@@ -62,19 +62,11 @@ class Discrepancy(BaseModel):
         description="Unique identifier",
         examples=["disc_001"],
     )
-    component_id: str = Field(
-        ..., min_length=1, description="Affected component"
-    )
-    type: DiscrepancyType = Field(
-        ..., description="Category of discrepancy"
-    )
-    stream_a_value: Optional[Any] = Field(
-        default=None, description="Value from Stream A"
-    )
-    stream_b_value: Optional[Any] = Field(
-        default=None, description="Value from Stream B"
-    )
-    ground_truth: Optional[Any] = Field(
+    component_id: str = Field(..., min_length=1, description="Affected component")
+    type: DiscrepancyType = Field(..., description="Category of discrepancy")
+    stream_a_value: Any | None = Field(default=None, description="Value from Stream A")
+    stream_b_value: Any | None = Field(default=None, description="Value from Stream B")
+    ground_truth: Any | None = Field(
         default=None,
         description="Static analysis ground truth if applicable",
     )
@@ -92,7 +84,7 @@ class Discrepancy(BaseModel):
         default=False,
         description="True if needs human review ticket",
     )
-    beads_ticket: Optional[BeadsTicketRef] = Field(
+    beads_ticket: BeadsTicketRef | None = Field(
         default=None,
         description="Ticket details if requires_beads",
     )
@@ -140,9 +132,7 @@ class ConvergenceStatus(BaseModel):
         recommendation: What to do next
     """
 
-    converged: bool = Field(
-        default=False, description="True if streams agree"
-    )
+    converged: bool = Field(default=False, description="True if streams agree")
     blocking_discrepancies: int = Field(
         default=0,
         ge=0,
@@ -171,21 +161,11 @@ class ComparisonSummary(BaseModel):
         requires_human_review: Discrepancies needing Beads tickets
     """
 
-    total_components: int = Field(
-        default=0, ge=0, description="Total components"
-    )
-    identical: int = Field(
-        default=0, ge=0, description="Identical components"
-    )
-    discrepancies: int = Field(
-        default=0, ge=0, description="Total discrepancies"
-    )
-    resolved_by_ground_truth: int = Field(
-        default=0, ge=0, description="Auto-resolved count"
-    )
-    requires_human_review: int = Field(
-        default=0, ge=0, description="Needs Beads tickets"
-    )
+    total_components: int = Field(default=0, ge=0, description="Total components")
+    identical: int = Field(default=0, ge=0, description="Identical components")
+    discrepancies: int = Field(default=0, ge=0, description="Total discrepancies")
+    resolved_by_ground_truth: int = Field(default=0, ge=0, description="Auto-resolved count")
+    requires_human_review: int = Field(default=0, ge=0, description="Needs Beads tickets")
 
     @computed_field
     @property
@@ -207,9 +187,7 @@ class ComparatorMetadata(BaseModel):
         token_count: Tokens consumed
     """
 
-    agent_id: str = Field(
-        default="C", description="Agent identifier"
-    )
+    agent_id: str = Field(default="C", description="Agent identifier")
     model: str = Field(
         ...,
         description="Model name",
@@ -224,7 +202,7 @@ class ComparatorMetadata(BaseModel):
         ge=0,
         description="Duration in milliseconds",
     )
-    token_count: Optional[int] = Field(
+    token_count: int | None = Field(
         default=None,
         ge=0,
         description="Tokens consumed",
@@ -268,13 +246,9 @@ class ComparisonResult(BaseModel):
         default_factory=ConvergenceStatus,
         description="Convergence state",
     )
-    metadata: ComparatorMetadata = Field(
-        ..., description="Agent metadata"
-    )
+    metadata: ComparatorMetadata = Field(..., description="Agent metadata")
 
-    def get_discrepancies_for_component(
-        self, component_id: str
-    ) -> list[Discrepancy]:
+    def get_discrepancies_for_component(self, component_id: str) -> list[Discrepancy]:
         """Get all discrepancies for a specific component."""
         return [d for d in self.discrepancies if d.component_id == component_id]
 

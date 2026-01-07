@@ -6,7 +6,6 @@ These models define the output schema produced by validator agents
 """
 
 from datetime import datetime
-from typing import Optional
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -144,12 +143,8 @@ class CorrectionApplied(BaseModel):
         description="Action taken",
         examples=["added", "removed", "modified"],
     )
-    original_value: Optional[str] = Field(
-        default=None, description="Value before correction"
-    )
-    corrected_value: Optional[str] = Field(
-        default=None, description="Value after correction"
-    )
+    original_value: str | None = Field(default=None, description="Value before correction")
+    corrected_value: str | None = Field(default=None, description="Value after correction")
     reason: str = Field(
         default="",
         description="Explanation for correction",
@@ -174,9 +169,7 @@ class ValidatorMetadata(BaseModel):
         description="Agent identifier",
         examples=["A2", "B2"],
     )
-    stream_id: StreamId = Field(
-        ..., description="Stream this agent belongs to"
-    )
+    stream_id: StreamId = Field(..., description="Stream this agent belongs to")
     model: str = Field(
         ...,
         description="Model name used",
@@ -191,7 +184,7 @@ class ValidatorMetadata(BaseModel):
         default_factory=datetime.utcnow,
         description="When validation occurred",
     )
-    token_count: Optional[int] = Field(
+    token_count: int | None = Field(
         default=None,
         ge=0,
         description="Tokens consumed",
@@ -218,9 +211,7 @@ class ValidationResult(BaseModel):
         min_length=1,
         description="Validated component ID",
     )
-    validation_result: ValidationStatus = Field(
-        ..., description="Overall validation status"
-    )
+    validation_result: ValidationStatus = Field(..., description="Overall validation status")
     completeness: CompletenessCheck = Field(
         default_factory=CompletenessCheck,
         description="Completeness check results",
@@ -233,9 +224,7 @@ class ValidationResult(BaseModel):
         default_factory=list,
         description="Corrections made by validator",
     )
-    metadata: ValidatorMetadata = Field(
-        ..., description="Validator metadata"
-    )
+    metadata: ValidatorMetadata = Field(..., description="Validator metadata")
 
     @computed_field
     @property
@@ -247,10 +236,7 @@ class ValidationResult(BaseModel):
     @property
     def requires_iteration(self) -> bool:
         """True if issues were found that might need re-documentation."""
-        return (
-            self.validation_result == ValidationStatus.FAIL
-            or len(self.corrections_applied) > 0
-        )
+        return self.validation_result == ValidationStatus.FAIL or len(self.corrections_applied) > 0
 
     @computed_field
     @property

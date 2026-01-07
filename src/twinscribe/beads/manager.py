@@ -9,30 +9,31 @@ Coordinates the full lifecycle of Beads tickets:
 """
 
 import asyncio
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from twinscribe.beads.client import (
     BeadsClient,
+    BeadsError,
     BeadsIssue,
     CreateIssueRequest,
-    BeadsError,
-)
-from twinscribe.beads.tracker import (
-    TicketTracker,
-    TrackedTicket,
-    TicketStatus,
-    TicketType,
 )
 from twinscribe.beads.templates import (
-    TicketTemplateEngine,
     DiscrepancyTemplateData,
     RebuildTemplateData,
     ResolutionParser,
+    TicketTemplateEngine,
+)
+from twinscribe.beads.tracker import (
+    TicketStatus,
+    TicketTracker,
+    TicketType,
+    TrackedTicket,
 )
 
 
@@ -61,9 +62,9 @@ class TicketResolution:
     ticket_key: str
     action: ResolutionAction
     content: str = ""
-    resolved_by: Optional[str] = None
-    resolved_at: Optional[datetime] = None
-    comment_id: Optional[str] = None
+    resolved_by: str | None = None
+    resolved_at: datetime | None = None
+    comment_id: str | None = None
 
 
 @dataclass
@@ -80,9 +81,9 @@ class ResolutionResult:
 
     success: bool
     ticket_key: str
-    discrepancy_id: Optional[str] = None
-    applied_value: Optional[str] = None
-    error: Optional[str] = None
+    discrepancy_id: str | None = None
+    applied_value: str | None = None
+    error: str | None = None
 
 
 class ManagerConfig(BaseModel):
@@ -138,7 +139,7 @@ class BeadsLifecycleManager:
     def __init__(
         self,
         client: BeadsClient,
-        config: Optional[ManagerConfig] = None,
+        config: ManagerConfig | None = None,
     ) -> None:
         """Initialize the lifecycle manager.
 
@@ -152,7 +153,7 @@ class BeadsLifecycleManager:
         self._template_engine = TicketTemplateEngine()
         self._resolution_parser = ResolutionParser()
         self._monitoring = False
-        self._monitor_task: Optional[asyncio.Task] = None
+        self._monitor_task: asyncio.Task | None = None
         self._resolution_callbacks: list[ResolutionCallback] = []
         self._initialized = False
 
@@ -217,9 +218,7 @@ class BeadsLifecycleManager:
             BeadsError: If ticket creation fails
         """
         # Render ticket content
-        summary, description = self._template_engine.render_discrepancy(
-            data, template_name
-        )
+        summary, description = self._template_engine.render_discrepancy(data, template_name)
 
         # Get labels and priority
         labels = self._template_engine.get_labels(data, template_name)
@@ -280,9 +279,7 @@ class BeadsLifecycleManager:
             BeadsError: If ticket creation fails
         """
         # Render ticket content
-        summary, description = self._template_engine.render_rebuild(
-            data, template_name
-        )
+        summary, description = self._template_engine.render_rebuild(data, template_name)
 
         # Get labels and priority
         labels = self._template_engine.get_labels(data, template_name)
@@ -334,7 +331,7 @@ class BeadsLifecycleManager:
     async def check_for_resolution(
         self,
         ticket_key: str,
-    ) -> Optional[TicketResolution]:
+    ) -> TicketResolution | None:
         """Check if a ticket has been resolved.
 
         Args:
@@ -374,9 +371,9 @@ class BeadsLifecycleManager:
     async def wait_for_resolution(
         self,
         ticket_key: str,
-        timeout_seconds: Optional[int] = None,
-        poll_interval: Optional[int] = None,
-    ) -> Optional[TicketResolution]:
+        timeout_seconds: int | None = None,
+        poll_interval: int | None = None,
+    ) -> TicketResolution | None:
         """Wait for a ticket to be resolved.
 
         Args:
@@ -446,12 +443,12 @@ class BeadsLifecycleManager:
                 # Check for resolutions (with concurrency limit)
                 semaphore = asyncio.Semaphore(self._config.max_concurrent_polls)
 
-                async def check_ticket(ticket: TrackedTicket) -> None:
-                    async with semaphore:
+                async def check_ticket(
+                    ticket: TrackedTicket, sem: asyncio.Semaphore = semaphore
+                ) -> None:
+                    async with sem:
                         try:
-                            resolution = await self.check_for_resolution(
-                                ticket.ticket_key
-                            )
+                            resolution = await self.check_for_resolution(ticket.ticket_key)
                             if resolution:
                                 ticket.mark_resolved(
                                     resolution.content,
@@ -562,7 +559,7 @@ This epic contains {len(components)} components to rebuild.
 
 h2. Components
 
-{chr(10).join(f'* {c.component_name} (priority: {c.rebuild_priority})' for c in sorted(components, key=lambda x: x.rebuild_priority))}
+{chr(10).join(f"* {c.component_name} (priority: {c.rebuild_priority})" for c in sorted(components, key=lambda x: x.rebuild_priority))}
 """.strip()
 
         request = CreateIssueRequest(
@@ -593,7 +590,7 @@ h2. Components
     async def _extract_resolution_from_issue(
         self,
         issue: BeadsIssue,
-    ) -> Optional[TicketResolution]:
+    ) -> TicketResolution | None:
         """Extract resolution from issue fields.
 
         Args:

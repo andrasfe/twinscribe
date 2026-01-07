@@ -104,6 +104,8 @@ markers = [
     "llm: Tests that would require LLM API calls (mocked in CI)",
     "beads: Tests related to Beads integration",
     "static_analysis: Tests for static analysis functionality",
+    "verification: Tests for CrossCheck verification framework strategies",
+    "e2e: End-to-end tests with real LLM API calls (requires OPENROUTER_API_KEY)",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
@@ -139,13 +141,16 @@ select = [
     "B",      # flake8-bugbear
     "C4",     # flake8-comprehensions
     "UP",     # pyupgrade
-    "ARG",    # flake8-unused-arguments
-    "SIM",    # flake8-simplify
 ]
 ignore = [
     "E501",   # line too long (handled by formatter)
     "B008",   # do not perform function calls in argument defaults
+    "F821",   # undefined names (false positives from quoted type hints)
+    "B904",   # exception chaining (stylistic, not a bug)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ARG", "SIM", "F841", "B017", "B023"]  # Tests: allow unused args, simplify, unused vars, assertion helpers
 
 [tool.ruff.lint.isort]
 known-first-party = ["twinscribe"]
