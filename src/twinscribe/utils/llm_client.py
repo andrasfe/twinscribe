@@ -599,6 +599,18 @@ class AsyncLLMClient:
         content = choice.get("message", {}).get("content", "")
         finish_reason = choice.get("finish_reason", "stop")
 
+        # Detect empty responses (indicates API issue)
+        if not content or not content.strip():
+            logger.warning(
+                f"[{time.strftime('%H:%M:%S')}] Empty response from {model_config.name}, "
+                f"finish_reason={finish_reason}"
+            )
+            # Raise retriable error for empty responses
+            raise APIError(
+                "Model returned empty response",
+                status_code=500,  # Treat as server error for retry
+            )
+
         # Extract usage
         usage_data = data.get("usage", {})
         prompt_tokens = usage_data.get("prompt_tokens", 0)
