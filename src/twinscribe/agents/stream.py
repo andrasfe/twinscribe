@@ -1310,46 +1310,74 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             # Try top-level fields if documentation section is empty
             doc_data = data
 
+        # Safely extract parameters - handle LLM returning strings instead of dicts
+        raw_params = doc_data.get("parameters", [])
+        if not isinstance(raw_params, list):
+            raw_params = []
+        parameters = [
+            ParameterDoc(
+                name=p.get("name", "") if isinstance(p, dict) else str(p),
+                type=p.get("type") if isinstance(p, dict) else None,
+                description=p.get("description", "") if isinstance(p, dict) else "",
+                default=p.get("default") if isinstance(p, dict) else None,
+                required=p.get("required", True) if isinstance(p, dict) else True,
+            )
+            for p in raw_params
+        ]
+
+        # Safely extract returns - handle LLM returning string instead of dict
+        raw_returns = doc_data.get("returns")
+        returns_doc = None
+        if raw_returns:
+            if isinstance(raw_returns, dict):
+                returns_doc = ReturnDoc(
+                    type=raw_returns.get("type"),
+                    description=raw_returns.get("description", ""),
+                )
+            elif isinstance(raw_returns, str):
+                returns_doc = ReturnDoc(type=None, description=raw_returns)
+
+        # Safely extract raises - handle LLM returning strings instead of dicts
+        raw_raises = doc_data.get("raises", [])
+        if not isinstance(raw_raises, list):
+            raw_raises = []
+        raises = [
+            ExceptionDoc(
+                type=e.get("type", "Exception") if isinstance(e, dict) else str(e),
+                condition=e.get("condition", "") if isinstance(e, dict) else "",
+            )
+            for e in raw_raises
+        ]
+
         documentation = ComponentDocumentation(
             summary=doc_data.get("summary", "") or doc_data.get("brief", "") or "",
             description=doc_data.get("description", "") or doc_data.get("detailed_description", "") or "",
-            parameters=[
-                ParameterDoc(
-                    name=p.get("name", ""),
-                    type=p.get("type"),
-                    description=p.get("description", ""),
-                    default=p.get("default"),
-                    required=p.get("required", True),
-                )
-                for p in doc_data.get("parameters", [])
-            ],
-            returns=ReturnDoc(
-                type=doc_data.get("returns", {}).get("type"),
-                description=doc_data.get("returns", {}).get("description", ""),
-            )
-            if doc_data.get("returns")
-            else None,
-            raises=[
-                ExceptionDoc(
-                    type=e.get("type", "Exception"),
-                    condition=e.get("condition", ""),
-                )
-                for e in doc_data.get("raises", [])
-            ],
+            parameters=parameters,
+            returns=returns_doc,
+            raises=raises,
             examples=doc_data.get("examples", []),
         )
 
-        # Extract call graph section
+        # Extract call graph section - handle LLM returning string instead of dict
         cg_data = data.get("call_graph", {})
+        if not isinstance(cg_data, dict):
+            cg_data = {}
 
-        # Filter out entries with empty component_id to avoid Pydantic validation errors
+        # Filter out entries with empty component_id and handle non-dict entries
+        raw_callers = cg_data.get("callers", [])
+        if not isinstance(raw_callers, list):
+            raw_callers = []
         callers_data = [
-            c for c in cg_data.get("callers", [])
-            if c.get("component_id", "").strip()
+            c for c in raw_callers
+            if isinstance(c, dict) and c.get("component_id", "").strip()
         ]
+
+        raw_callees = cg_data.get("callees", [])
+        if not isinstance(raw_callees, list):
+            raw_callees = []
         callees_data = [
-            c for c in cg_data.get("callees", [])
-            if c.get("component_id", "").strip()
+            c for c in raw_callees
+            if isinstance(c, dict) and c.get("component_id", "").strip()
         ]
 
         call_graph = CallGraphSection(
