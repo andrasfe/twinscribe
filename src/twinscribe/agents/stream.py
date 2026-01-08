@@ -1221,11 +1221,16 @@ class ConcreteDocumenterAgent(DocumenterAgent):
                 )
                 return self._create_fallback_output(component_id, token_count)
 
-        # Extract documentation section
+        # Extract documentation section - handle various LLM response formats
+        # Some models return {"documentation": {...}}, others return fields at top level
         doc_data = data.get("documentation", {})
+        if not doc_data or (not doc_data.get("summary") and not doc_data.get("description")):
+            # Try top-level fields if documentation section is empty
+            doc_data = data
+
         documentation = ComponentDocumentation(
-            summary=doc_data.get("summary", ""),
-            description=doc_data.get("description", ""),
+            summary=doc_data.get("summary", "") or doc_data.get("brief", "") or "",
+            description=doc_data.get("description", "") or doc_data.get("detailed_description", "") or "",
             parameters=[
                 ParameterDoc(
                     name=p.get("name", ""),
