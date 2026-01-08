@@ -1261,45 +1261,152 @@ class ConcreteDocumenterAgent(DocumenterAgent):
         import json
         import re
 
-        def normalize_score(score, default: float = 0.8) -> float:
-            """Normalize LLM score to 0-1 range.
+        # =================================================================
+        # BULLETPROOF TYPE COERCION SYSTEM
+        # These functions convert ANY arbitrary LLM output to expected types
+        # =================================================================
 
-            Handles:
-            - Numeric scores on 0-10 scale (divided by 10)
-            - String scores like "high", "medium", "low"
-            - None values (returns default)
-            """
-            if score is None:
+        def coerce_to_str(value: any) -> str:
+            """Convert ANY value to a string. Bulletproof."""
+            if value is None:
+                return ""
+            if isinstance(value, str):
+                return value
+            if isinstance(value, dict):
+                # Extract meaningful content from dict
+                for key in ("description", "message", "text", "value", "reason", "content", "summary"):
+                    if key in value and value[key]:
+                        return coerce_to_str(value[key])
+                # Join all non-empty values
+                parts = [coerce_to_str(v) for v in value.values() if v]
+                return " ".join(parts)
+            if isinstance(value, (list, tuple)):
+                parts = [coerce_to_str(item) for item in value if item]
+                return " ".join(parts)
+            return str(value)
+
+        def coerce_to_str_list(value: any) -> list[str]:
+            """Convert ANY value to a list of strings. Bulletproof."""
+            if value is None:
+                return []
+            if isinstance(value, str):
+                return [value] if value.strip() else []
+            if isinstance(value, (list, tuple)):
+                return [coerce_to_str(item) for item in value if item]
+            if isinstance(value, dict):
+                return [coerce_to_str(v) for v in value.values() if v]
+            s = coerce_to_str(value)
+            return [s] if s else []
+
+        def coerce_to_float(value: any, default: float = 0.0, min_val: float = None, max_val: float = None) -> float:
+            """Convert ANY value to a float. Bulletproof."""
+            if value is None:
                 return default
-
-            # Handle string confidence values
-            if isinstance(score, str):
-                score_lower = score.lower().strip()
-                confidence_map = {
-                    "very high": 0.95, "very_high": 0.95, "veryhigh": 0.95,
+            if isinstance(value, (int, float)):
+                result = float(value)
+            elif isinstance(value, str):
+                score_map = {
+                    "very high": 0.95, "very_high": 0.95, "excellent": 0.95,
                     "high": 0.85, "good": 0.85, "confident": 0.85,
                     "medium": 0.7, "moderate": 0.7, "average": 0.7, "normal": 0.7,
-                    "low": 0.5, "uncertain": 0.5, "poor": 0.5,
-                    "very low": 0.3, "very_low": 0.3, "verylow": 0.3,
-                    "none": 0.1, "unknown": default,
+                    "low": 0.5, "poor": 0.5, "uncertain": 0.5,
+                    "very low": 0.3, "very_low": 0.3, "bad": 0.3,
+                    "none": 0.1, "zero": 0.0,
                 }
-                if score_lower in confidence_map:
-                    return confidence_map[score_lower]
-                # Try to parse as number
+                cleaned = value.lower().strip()
+                if cleaned in score_map:
+                    result = score_map[cleaned]
+                else:
+                    try:
+                        result = float(value)
+                    except (ValueError, TypeError):
+                        return default
+            elif isinstance(value, dict):
+                for key in ("score", "value", "confidence", "rating"):
+                    if key in value:
+                        return coerce_to_float(value[key], default, min_val, max_val)
+                return default
+            elif isinstance(value, (list, tuple)) and value:
+                return coerce_to_float(value[0], default, min_val, max_val)
+            else:
+                return default
+
+            # Normalize 0-10 scale to 0-1
+            if result > 1.0 and (min_val is None or min_val >= 0) and (max_val is None or max_val <= 1):
+                result = result / 10.0
+            if min_val is not None:
+                result = max(min_val, result)
+            if max_val is not None:
+                result = min(max_val, result)
+            return result
+
+        def coerce_to_int(value: any, default: int = None) -> int | None:
+            """Convert ANY value to an int. Bulletproof."""
+            if value is None:
+                return default
+            if isinstance(value, int):
+                return value
+            if isinstance(value, float):
+                return int(value)
+            if isinstance(value, str):
                 try:
-                    score = float(score)
+                    return int(float(value))
                 except (ValueError, TypeError):
                     return default
-            elif not isinstance(score, (int, float)):
+            if isinstance(value, dict):
+                for key in ("value", "line", "number", "count"):
+                    if key in value:
+                        return coerce_to_int(value[key], default)
                 return default
-            else:
-                score = float(score)
+            if isinstance(value, (list, tuple)) and value:
+                return coerce_to_int(value[0], default)
+            return default
 
-            # If score > 1, assume it's on 0-10 scale
-            if score > 1.0:
-                score = score / 10.0
-            # Clamp to valid range
-            return max(0.0, min(1.0, score))
+        def coerce_to_bool(value: any, default: bool = True) -> bool:
+            """Convert ANY value to a bool. Bulletproof."""
+            if value is None:
+                return default
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                return value.lower().strip() in ("true", "yes", "1", "on", "required", "y")
+            if isinstance(value, (int, float)):
+                return bool(value)
+            if isinstance(value, dict):
+                for key in ("value", "required", "enabled"):
+                    if key in value:
+                        return coerce_to_bool(value[key], default)
+                return default
+            return default
+
+        def normalize_score(score, default: float = 0.8) -> float:
+            """Normalize LLM score to 0-1 range. Uses bulletproof coercion."""
+            return coerce_to_float(score, default=default, min_val=0.0, max_val=1.0)
+
+        def ensure_string(value, default: str = "") -> str:
+            """Convert value to string. Uses bulletproof coercion."""
+            result = coerce_to_str(value)
+            return result if result else default
+
+        def ensure_list(value, default: list = None) -> list:
+            """Ensure value is a list of strings. Uses bulletproof coercion."""
+            if default is None:
+                default = []
+            return coerce_to_str_list(value) or default
+
+        def safe_int(value, default: int = None) -> int | None:
+            """Convert value to int. Uses bulletproof coercion."""
+            return coerce_to_int(value, default)
+
+        def safe_bool(value, default: bool = True) -> bool:
+            """Convert value to bool. Uses bulletproof coercion."""
+            return coerce_to_bool(value, default)
+
+        def ensure_string_list(value, default: list = None) -> list[str]:
+            """Ensure value is a list of strings. Uses bulletproof coercion."""
+            if default is None:
+                default = []
+            return coerce_to_str_list(value) or default
 
         # Strip markdown code fences if present (models sometimes wrap JSON in ```json ... ```)
         content = content.strip()
@@ -1409,82 +1516,14 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             )
             data = {}
 
-        def ensure_string(value, default: str = "") -> str:
-            """Convert value to string, handling dicts by joining values."""
-            if value is None:
-                return default
-            if isinstance(value, str):
-                return value
-            if isinstance(value, dict):
-                # LLM sometimes returns {"what": "...", "how": "..."} - join values
-                return " ".join(str(v) for v in value.values() if v)
-            if isinstance(value, list):
-                return " ".join(str(v) for v in value if v)
-            return str(value)
-
-        def ensure_list(value, default: list = None) -> list:
-            """Convert value to list if it's a string or other type."""
-            if default is None:
-                default = []
-            if value is None:
-                return default
-            if isinstance(value, list):
-                return value
-            if isinstance(value, str):
-                return [value] if value.strip() else default
-            return default
-
-        def safe_int(value, default: int | None = None) -> int | None:
-            """Convert value to int, handling strings."""
-            if value is None:
-                return default
-            if isinstance(value, int):
-                return value
-            if isinstance(value, str):
-                try:
-                    return int(value)
-                except ValueError:
-                    return default
-            if isinstance(value, float):
-                return int(value)
-            return default
-
         def safe_call_type(value: str | None) -> CallType:
             """Convert string to CallType, defaulting to DIRECT for invalid values."""
             if not value:
                 return CallType.DIRECT
             try:
-                return CallType(str(value).lower())
+                return CallType(coerce_to_str(value).lower())
             except ValueError:
-                # LLM returned invalid call type like "inherited", "indirect", etc.
                 return CallType.DIRECT
-
-        def safe_bool(value, default: bool = True) -> bool:
-            """Convert value to bool, handling string representations."""
-            if value is None:
-                return default
-            if isinstance(value, bool):
-                return value
-            if isinstance(value, str):
-                return value.lower() in ("true", "yes", "1", "on", "required")
-            if isinstance(value, (int, float)):
-                return bool(value)
-            return default
-
-        def ensure_string_list(value, default: list = None) -> list[str]:
-            """Ensure value is a list of strings."""
-            if default is None:
-                default = []
-            if value is None:
-                return default
-            if isinstance(value, str):
-                return [value] if value.strip() else default
-            if isinstance(value, list):
-                return [ensure_string(item) for item in value if item]
-            if isinstance(value, dict):
-                # Convert dict values to list of strings
-                return [ensure_string(v) for v in value.values() if v]
-            return default
 
         # Extract documentation section - handle various LLM response formats
         # Some models return {"documentation": {...}}, others return fields at top level
@@ -1812,58 +1851,157 @@ class ConcreteValidatorAgent(ValidatorAgent):
         import json
         import re
 
-        def normalize_score(score, default: float = 1.0) -> float:
-            """Normalize LLM score to 0-1 range."""
-            if score is None:
-                return default
-            if isinstance(score, str):
-                score_lower = score.lower().strip()
-                score_map = {
-                    "very high": 0.95, "high": 0.85, "good": 0.85,
-                    "medium": 0.7, "moderate": 0.7, "average": 0.7,
-                    "low": 0.5, "poor": 0.5,
-                    "very low": 0.3, "bad": 0.3,
-                    "none": 0.1,
-                }
-                if score_lower in score_map:
-                    return score_map[score_lower]
-                try:
-                    score = float(score)
-                except (ValueError, TypeError):
-                    return default
-            elif not isinstance(score, (int, float)):
-                return default
-            else:
-                score = float(score)
-            if score > 1.0:
-                score = score / 10.0
-            return max(0.0, min(1.0, score))
+        # =================================================================
+        # BULLETPROOF TYPE COERCION SYSTEM
+        # These functions convert ANY arbitrary LLM output to expected types
+        # =================================================================
 
-        def ensure_string(value, default: str = "") -> str:
-            """Convert value to string."""
+        def coerce_to_str(value: any) -> str:
+            """Convert ANY value to a string. Bulletproof."""
             if value is None:
-                return default
+                return ""
             if isinstance(value, str):
                 return value
             if isinstance(value, dict):
-                return " ".join(str(v) for v in value.values() if v)
-            if isinstance(value, list):
-                return " ".join(str(v) for v in value if v)
+                # Extract meaningful content from dict
+                # Try common keys first, then join all values
+                for key in ("description", "message", "text", "value", "reason", "content", "summary"):
+                    if key in value and value[key]:
+                        return coerce_to_str(value[key])
+                # Join all non-empty values
+                parts = []
+                for v in value.values():
+                    s = coerce_to_str(v)
+                    if s:
+                        parts.append(s)
+                return " ".join(parts)
+            if isinstance(value, (list, tuple)):
+                parts = [coerce_to_str(item) for item in value if item]
+                return " ".join(parts)
+            # Handle numbers, bools, etc.
             return str(value)
 
-        def ensure_list(value, default: list = None) -> list:
-            """Ensure value is a list."""
-            if default is None:
-                default = []
+        def coerce_to_str_list(value: any) -> list[str]:
+            """Convert ANY value to a list of strings. Bulletproof."""
+            if value is None:
+                return []
+            if isinstance(value, str):
+                return [value] if value.strip() else []
+            if isinstance(value, (list, tuple)):
+                result = []
+                for item in value:
+                    s = coerce_to_str(item)
+                    if s:
+                        result.append(s)
+                return result
+            if isinstance(value, dict):
+                # Convert dict values to list of strings
+                return [coerce_to_str(v) for v in value.values() if v]
+            # Single value - convert to string and wrap
+            s = coerce_to_str(value)
+            return [s] if s else []
+
+        def coerce_to_float(value: any, default: float = 0.0, min_val: float = None, max_val: float = None) -> float:
+            """Convert ANY value to a float. Bulletproof."""
             if value is None:
                 return default
-            if isinstance(value, list):
+            if isinstance(value, (int, float)):
+                result = float(value)
+            elif isinstance(value, str):
+                # Handle string scores like "high", "medium", "low"
+                score_map = {
+                    "very high": 0.95, "very_high": 0.95, "excellent": 0.95,
+                    "high": 0.85, "good": 0.85, "confident": 0.85,
+                    "medium": 0.7, "moderate": 0.7, "average": 0.7, "normal": 0.7,
+                    "low": 0.5, "poor": 0.5, "uncertain": 0.5,
+                    "very low": 0.3, "very_low": 0.3, "bad": 0.3,
+                    "none": 0.1, "zero": 0.0,
+                }
+                cleaned = value.lower().strip()
+                if cleaned in score_map:
+                    result = score_map[cleaned]
+                else:
+                    try:
+                        result = float(value)
+                    except (ValueError, TypeError):
+                        return default
+            elif isinstance(value, dict):
+                # Try to extract a score from dict
+                for key in ("score", "value", "confidence", "rating"):
+                    if key in value:
+                        return coerce_to_float(value[key], default, min_val, max_val)
+                return default
+            elif isinstance(value, (list, tuple)) and value:
+                # Take first element
+                return coerce_to_float(value[0], default, min_val, max_val)
+            else:
+                return default
+
+            # Normalize 0-10 scale to 0-1
+            if result > 1.0 and (min_val is None or min_val >= 0) and (max_val is None or max_val <= 1):
+                result = result / 10.0
+
+            # Clamp to range if specified
+            if min_val is not None:
+                result = max(min_val, result)
+            if max_val is not None:
+                result = min(max_val, result)
+
+            return result
+
+        def coerce_to_int(value: any, default: int = None) -> int | None:
+            """Convert ANY value to an int. Bulletproof."""
+            if value is None:
+                return default
+            if isinstance(value, int):
+                return value
+            if isinstance(value, float):
+                return int(value)
+            if isinstance(value, str):
+                try:
+                    return int(float(value))  # Handle "42.0" style strings
+                except (ValueError, TypeError):
+                    return default
+            if isinstance(value, dict):
+                for key in ("value", "line", "number", "count"):
+                    if key in value:
+                        return coerce_to_int(value[key], default)
+                return default
+            if isinstance(value, (list, tuple)) and value:
+                return coerce_to_int(value[0], default)
+            return default
+
+        def coerce_to_bool(value: any, default: bool = True) -> bool:
+            """Convert ANY value to a bool. Bulletproof."""
+            if value is None:
+                return default
+            if isinstance(value, bool):
                 return value
             if isinstance(value, str):
-                return [value] if value.strip() else default
+                return value.lower().strip() in ("true", "yes", "1", "on", "required", "y")
+            if isinstance(value, (int, float)):
+                return bool(value)
             if isinstance(value, dict):
-                return list(value.values())
+                for key in ("value", "required", "enabled"):
+                    if key in value:
+                        return coerce_to_bool(value[key], default)
+                return default
             return default
+
+        def normalize_score(score, default: float = 1.0) -> float:
+            """Normalize LLM score to 0-1 range. Uses bulletproof coercion."""
+            return coerce_to_float(score, default=default, min_val=0.0, max_val=1.0)
+
+        def ensure_string(value, default: str = "") -> str:
+            """Convert value to string. Uses bulletproof coercion."""
+            result = coerce_to_str(value)
+            return result if result else default
+
+        def ensure_list(value, default: list = None) -> list:
+            """Ensure value is a list of strings. Uses bulletproof coercion."""
+            if default is None:
+                default = []
+            return coerce_to_str_list(value) or default
 
         # Strip markdown code fences if present (models sometimes wrap JSON in ```json ... ```)
         content = content.strip()

@@ -677,6 +677,46 @@ class TestValidatorEdgeCases:
         from twinscribe.models.base import ValidationStatus
         assert result.validation_result == ValidationStatus.PASS
 
+    def test_issues_as_list_of_dicts(self, validator_config):
+        """description_quality.issues as list of dicts should be converted to strings.
+
+        This is the exact error case from production:
+        issues.0 Input should be a valid string [type=string_type,
+        input_value={'issue_type': 'summary_r...this is a minor issue."}, input_type=dict]
+        """
+        agent = ConcreteValidatorAgent(validator_config)
+
+        response = json.dumps({
+            "validation_result": "warning",
+            "completeness": {"score": 0.9},
+            "call_graph_accuracy": {"score": 1.0},
+            "description_quality": {
+                "score": 0.8,
+                "issues": [
+                    {
+                        "issue_type": "summary_redundant",
+                        "severity": "minor",
+                        "description": "Summary repeats the function name. This is a minor issue."
+                    },
+                    {
+                        "issue_type": "missing_usage_context",
+                        "severity": "minor",
+                        "description": "Missing context about when to use this (LangChain LCEL graph)."
+                    },
+                ],
+            },
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        # Should convert dicts to strings and not crash
+        assert isinstance(result.description_quality.issues, list)
+        assert len(result.description_quality.issues) == 2
+        # Each issue should be a string (converted from dict)
+        assert all(isinstance(issue, str) for issue in result.description_quality.issues)
+        # Content should be preserved
+        assert "summary" in result.description_quality.issues[0].lower() or "redundant" in result.description_quality.issues[0].lower()
+
 
 class TestCallerCalleeEdgeCases:
     """Tests for caller/callee edge cases."""
