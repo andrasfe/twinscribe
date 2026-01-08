@@ -421,3 +421,319 @@ class TestTypeGuards:
         # Should wrap in list
         assert len(result.documentation.raises) == 1
         assert result.documentation.raises[0].type == "ValueError"
+
+
+class TestAdvancedJsonRepair:
+    """Tests for advanced JSON repair scenarios."""
+
+    def test_single_quotes_converted_to_double(self, documenter_config):
+        """Single quotes in JSON should be converted to double quotes."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        # JSON with single quotes (invalid but common LLM output)
+        bad_json = "{'documentation': {'summary': 'Test', 'description': 'Desc'}, 'call_graph': {'callers': [], 'callees': []}}"
+
+        result = agent._parse_response(bad_json, "test.Component", 100)
+
+        assert result.documentation.summary == "Test"
+
+    def test_javascript_comments_removed(self, documenter_config):
+        """JavaScript-style comments should be removed from JSON."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        # JSON with comments
+        bad_json = """
+        {
+            // This is a comment
+            "documentation": {
+                "summary": "Test",
+                "description": "Desc" /* inline comment */
+            },
+            "call_graph": {"callers": [], "callees": []}
+        }
+        """
+
+        result = agent._parse_response(bad_json, "test.Component", 100)
+
+        assert result.documentation.summary == "Test"
+
+    def test_nan_infinity_handled(self, documenter_config):
+        """NaN and Infinity in JSON should be handled."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        # JSON with NaN/Infinity (invalid JSON but possible LLM output)
+        bad_json = '{"documentation": {"summary": "Test", "description": "Desc"}, "call_graph": {"callers": [], "callees": []}, "confidence": NaN}'
+
+        result = agent._parse_response(bad_json, "test.Component", 100)
+
+        # Should parse with NaN converted to null -> default value
+        assert result.documentation.summary == "Test"
+
+    def test_unquoted_property_names_fixed(self, documenter_config):
+        """Unquoted property names should be fixed."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        # JSON with unquoted property names
+        bad_json = '{documentation: {"summary": "Test", "description": "Desc"}, call_graph: {"callers": [], "callees": []}}'
+
+        result = agent._parse_response(bad_json, "test.Component", 100)
+
+        assert result.documentation.summary == "Test"
+
+    def test_json_embedded_in_text_extracted(self, documenter_config):
+        """JSON embedded in surrounding text should be extracted."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        # JSON embedded in text (common with some LLMs)
+        bad_json = """
+        Here is the documentation:
+        {"documentation": {"summary": "Test", "description": "Desc"}, "call_graph": {"callers": [], "callees": []}}
+        That's all!
+        """
+
+        result = agent._parse_response(bad_json, "test.Component", 100)
+
+        assert result.documentation.summary == "Test"
+
+
+class TestConfidenceStrings:
+    """Tests for string-based confidence values."""
+
+    def test_confidence_high_string(self, documenter_config):
+        """Confidence 'high' should be converted to ~0.85."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {"summary": "Test", "description": "Desc"},
+            "call_graph": {"callers": [], "callees": []},
+            "confidence": "high",
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert result.metadata.confidence == 0.85
+
+    def test_confidence_low_string(self, documenter_config):
+        """Confidence 'low' should be converted to ~0.5."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {"summary": "Test", "description": "Desc"},
+            "call_graph": {"callers": [], "callees": []},
+            "confidence": "low",
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert result.metadata.confidence == 0.5
+
+    def test_confidence_medium_string(self, documenter_config):
+        """Confidence 'medium' should be converted to ~0.7."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {"summary": "Test", "description": "Desc"},
+            "call_graph": {"callers": [], "callees": []},
+            "confidence": "medium",
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert result.metadata.confidence == 0.7
+
+
+class TestBooleanStrings:
+    """Tests for string-based boolean values."""
+
+    def test_required_true_string(self, documenter_config):
+        """Parameter required='true' should be converted to True."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {
+                "summary": "Test",
+                "description": "Desc",
+                "parameters": [{"name": "param1", "required": "true"}],
+            },
+            "call_graph": {"callers": [], "callees": []},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert result.documentation.parameters[0].required is True
+
+    def test_required_false_string(self, documenter_config):
+        """Parameter required='false' should be converted to False."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {
+                "summary": "Test",
+                "description": "Desc",
+                "parameters": [{"name": "param1", "required": "false"}],
+            },
+            "call_graph": {"callers": [], "callees": []},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert result.documentation.parameters[0].required is False
+
+    def test_required_yes_no_strings(self, documenter_config):
+        """Parameter required='yes'/'no' should be converted to bool."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {
+                "summary": "Test",
+                "description": "Desc",
+                "parameters": [
+                    {"name": "param1", "required": "yes"},
+                    {"name": "param2", "required": "no"},
+                ],
+            },
+            "call_graph": {"callers": [], "callees": []},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert result.documentation.parameters[0].required is True
+        assert result.documentation.parameters[1].required is False
+
+
+class TestValidatorEdgeCases:
+    """Tests for validator-specific edge cases."""
+
+    def test_score_string_high(self, validator_config):
+        """Score 'high' in validation should be converted correctly."""
+        agent = ConcreteValidatorAgent(validator_config)
+
+        response = json.dumps({
+            "validation_result": "passed",
+            "completeness": {"score": "high"},
+            "call_graph_accuracy": {"score": "medium"},
+            "description_quality": {"score": "low"},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert result.completeness.score == 0.85
+        assert result.call_graph_accuracy.score == 0.7
+        assert result.description_quality.score == 0.5
+
+    def test_missing_elements_as_string(self, validator_config):
+        """missing_elements as string should be wrapped in list."""
+        agent = ConcreteValidatorAgent(validator_config)
+
+        response = json.dumps({
+            "validation_result": "warning",
+            "completeness": {
+                "score": 0.8,
+                "missing_elements": "return type",  # String instead of list
+            },
+            "call_graph_accuracy": {"score": 1.0},
+            "description_quality": {"score": 1.0},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert isinstance(result.completeness.missing_elements, list)
+        assert "return type" in result.completeness.missing_elements
+
+    def test_corrections_as_single_dict(self, validator_config):
+        """corrections_applied as single dict should be wrapped in list."""
+        agent = ConcreteValidatorAgent(validator_config)
+
+        response = json.dumps({
+            "validation_result": "passed",
+            "completeness": {"score": 1.0},
+            "call_graph_accuracy": {"score": 1.0},
+            "description_quality": {"score": 1.0},
+            "corrections_applied": {
+                "field": "description",
+                "action": "modified",
+                "reason": "Added more detail",
+            },
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert len(result.corrections_applied) == 1
+        assert result.corrections_applied[0].field == "description"
+
+    def test_validation_result_case_insensitive(self, validator_config):
+        """validation_result should be case insensitive."""
+        agent = ConcreteValidatorAgent(validator_config)
+
+        response = json.dumps({
+            "validation_result": "PASSED",
+            "completeness": {"score": 1.0},
+            "call_graph_accuracy": {"score": 1.0},
+            "description_quality": {"score": 1.0},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        from twinscribe.models.base import ValidationStatus
+        assert result.validation_result == ValidationStatus.PASS
+
+
+class TestCallerCalleeEdgeCases:
+    """Tests for caller/callee edge cases."""
+
+    def test_callers_as_string_list(self, documenter_config):
+        """Callers as list of strings should be handled."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {"summary": "Test", "description": "Desc"},
+            "call_graph": {
+                "callers": ["foo.bar", "baz.qux"],  # Strings instead of dicts
+                "callees": [],
+            },
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert len(result.call_graph.callers) == 2
+        assert result.call_graph.callers[0].component_id == "foo.bar"
+        assert result.call_graph.callers[1].component_id == "baz.qux"
+
+    def test_component_id_as_number(self, documenter_config):
+        """component_id as number should be converted to string."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {"summary": "Test", "description": "Desc"},
+            "call_graph": {
+                "callers": [{"component_id": 42}],  # Number instead of string
+                "callees": [],
+            },
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert len(result.call_graph.callers) == 1
+        assert result.call_graph.callers[0].component_id == "42"
+
+    def test_returns_as_list(self, documenter_config):
+        """Returns as list should take first element."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {
+                "summary": "Test",
+                "description": "Desc",
+                "returns": [
+                    {"type": "str", "description": "The result"},
+                    {"type": "int", "description": "The count"},
+                ],
+            },
+            "call_graph": {"callers": [], "callees": []},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert result.documentation.returns is not None
+        assert result.documentation.returns.type == "str"
+        assert "result" in result.documentation.returns.description

@@ -1261,18 +1261,40 @@ class ConcreteDocumenterAgent(DocumenterAgent):
         import json
         import re
 
-        def normalize_score(score: float | int | None, default: float = 0.8) -> float:
+        def normalize_score(score, default: float = 0.8) -> float:
             """Normalize LLM score to 0-1 range.
 
-            LLMs sometimes return scores on 0-10 scale instead of 0-1.
-            This normalizes and clamps to valid range.
+            Handles:
+            - Numeric scores on 0-10 scale (divided by 10)
+            - String scores like "high", "medium", "low"
+            - None values (returns default)
             """
             if score is None:
                 return default
-            try:
-                score = float(score)
-            except (ValueError, TypeError):
+
+            # Handle string confidence values
+            if isinstance(score, str):
+                score_lower = score.lower().strip()
+                confidence_map = {
+                    "very high": 0.95, "very_high": 0.95, "veryhigh": 0.95,
+                    "high": 0.85, "good": 0.85, "confident": 0.85,
+                    "medium": 0.7, "moderate": 0.7, "average": 0.7, "normal": 0.7,
+                    "low": 0.5, "uncertain": 0.5, "poor": 0.5,
+                    "very low": 0.3, "very_low": 0.3, "verylow": 0.3,
+                    "none": 0.1, "unknown": default,
+                }
+                if score_lower in confidence_map:
+                    return confidence_map[score_lower]
+                # Try to parse as number
+                try:
+                    score = float(score)
+                except (ValueError, TypeError):
+                    return default
+            elif not isinstance(score, (int, float)):
                 return default
+            else:
+                score = float(score)
+
             # If score > 1, assume it's on 0-10 scale
             if score > 1.0:
                 score = score / 10.0
@@ -1290,46 +1312,87 @@ class ConcreteDocumenterAgent(DocumenterAgent):
 
         def try_fix_json(text: str) -> str:
             """Attempt to fix common JSON syntax errors from LLMs."""
+            if not text or not text.strip():
+                return "{}"
+
+            # Remove JavaScript-style comments
+            text = re.sub(r'//[^\n]*\n', '\n', text)
+            text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+
+            # Replace single quotes with double quotes (careful with apostrophes)
+            # Only replace quotes that look like JSON string delimiters
+            text = re.sub(r"(?<![a-zA-Z])'([^']*)'(?![a-zA-Z])", r'"\1"', text)
+
+            # Handle NaN, Infinity, -Infinity (not valid JSON)
+            text = re.sub(r'\bNaN\b', 'null', text)
+            text = re.sub(r'\bInfinity\b', '999999999', text)
+            text = re.sub(r'-Infinity\b', '-999999999', text)
+
             # Remove trailing commas before ] or }
             text = re.sub(r',\s*([}\]])', r'\1', text)
-            # Fix missing commas between elements (common: "value"  "key" -> "value", "key")
+
+            # Fix missing commas between elements
             text = re.sub(r'"\s+(")', r'", \1', text)
             text = re.sub(r'(\d)\s+(")', r'\1, \2', text)
             text = re.sub(r'(true|false|null)\s+(")', r'\1, \2', text)
             text = re.sub(r'}\s+{', r'}, {', text)
             text = re.sub(r']\s+\[', r'], [', text)
+
+            # Fix unquoted property names (simple cases)
+            text = re.sub(r'{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'{"\1":', text)
+            text = re.sub(r',\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r',"\1":', text)
+
             return text
 
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError:
-            # Try to fix common JSON errors and retry
+        def safe_json_parse(text: str) -> dict | None:
+            """Try multiple strategies to parse JSON."""
+            if not text or not text.strip():
+                return {}
+
+            # Try direct parse first
             try:
-                fixed_content = try_fix_json(content)
-                data = json.loads(fixed_content)
-                self._logger.warning(
-                    f"Fixed JSON syntax errors for {component_id}"
-                )
-            except json.JSONDecodeError as e:
-                # Log detailed error info for debugging
-                content_preview = content[:200] if content else "<empty>"
-                self._logger.error(
-                    f"Failed to parse JSON response for {component_id}: {e}\n"
-                    f"Content length: {len(content) if content else 0}, "
-                    f"Preview: {content_preview!r}"
-                )
-                # Return minimal valid output
-                return self._create_fallback_output(component_id, token_count)
+                return json.loads(text)
+            except json.JSONDecodeError:
+                pass
+
+            # Try with fixes
+            try:
+                fixed = try_fix_json(text)
+                return json.loads(fixed)
+            except json.JSONDecodeError:
+                pass
+
+            # Try to extract JSON from markdown or other wrapper
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if json_match:
+                try:
+                    return json.loads(json_match.group())
+                except json.JSONDecodeError:
+                    try:
+                        fixed = try_fix_json(json_match.group())
+                        return json.loads(fixed)
+                    except json.JSONDecodeError:
+                        pass
+
+            return None
+
+        data = safe_json_parse(content)
+        if data is None:
+            content_preview = content[:200] if content else "<empty>"
+            self._logger.error(
+                f"Failed to parse JSON response for {component_id}\n"
+                f"Content length: {len(content) if content else 0}, "
+                f"Preview: {content_preview!r}"
+            )
+            return self._create_fallback_output(component_id, token_count)
 
         # Handle case where model returns wrong type
         if isinstance(data, str):
-            # Model returned a string - use it as description
             self._logger.warning(
                 f"Model returned string instead of dict for {component_id}, using as description"
             )
             data = {"description": data}
         elif isinstance(data, list):
-            # Use first element if it's a dict, otherwise create fallback
             if data and isinstance(data[0], dict):
                 self._logger.warning(
                     f"Model returned list instead of dict for {component_id}, using first element"
@@ -1340,6 +1403,11 @@ class ConcreteDocumenterAgent(DocumenterAgent):
                     f"Model returned invalid list for {component_id}: {data[:100] if data else '[]'}"
                 )
                 return self._create_fallback_output(component_id, token_count)
+        elif isinstance(data, (int, float, bool)):
+            self._logger.warning(
+                f"Model returned {type(data).__name__} instead of dict for {component_id}"
+            )
+            data = {}
 
         def ensure_string(value, default: str = "") -> str:
             """Convert value to string, handling dicts by joining values."""
@@ -1386,10 +1454,37 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             if not value:
                 return CallType.DIRECT
             try:
-                return CallType(value.lower())
+                return CallType(str(value).lower())
             except ValueError:
                 # LLM returned invalid call type like "inherited", "indirect", etc.
                 return CallType.DIRECT
+
+        def safe_bool(value, default: bool = True) -> bool:
+            """Convert value to bool, handling string representations."""
+            if value is None:
+                return default
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                return value.lower() in ("true", "yes", "1", "on", "required")
+            if isinstance(value, (int, float)):
+                return bool(value)
+            return default
+
+        def ensure_string_list(value, default: list = None) -> list[str]:
+            """Ensure value is a list of strings."""
+            if default is None:
+                default = []
+            if value is None:
+                return default
+            if isinstance(value, str):
+                return [value] if value.strip() else default
+            if isinstance(value, list):
+                return [ensure_string(item) for item in value if item]
+            if isinstance(value, dict):
+                # Convert dict values to list of strings
+                return [ensure_string(v) for v in value.values() if v]
+            return default
 
         # Extract documentation section - handle various LLM response formats
         # Some models return {"documentation": {...}}, others return fields at top level
@@ -1403,42 +1498,66 @@ class ConcreteDocumenterAgent(DocumenterAgent):
 
         # Safely extract parameters - handle LLM returning strings instead of dicts
         raw_params = doc_data.get("parameters", [])
-        if not isinstance(raw_params, list):
+        if raw_params is None:
+            raw_params = []
+        elif not isinstance(raw_params, list):
             raw_params = [raw_params] if raw_params else []
-        parameters = [
-            ParameterDoc(
-                name=p.get("name", "") if isinstance(p, dict) else str(p),
-                type=ensure_string(p.get("type")) if isinstance(p, dict) else None,
-                description=ensure_string(p.get("description", "")) if isinstance(p, dict) else "",
-                default=p.get("default") if isinstance(p, dict) else None,
-                required=p.get("required", True) if isinstance(p, dict) else True,
-            )
-            for p in raw_params
-        ]
+        parameters = []
+        for p in raw_params:
+            if isinstance(p, dict):
+                parameters.append(ParameterDoc(
+                    name=ensure_string(p.get("name"), "param"),
+                    type=ensure_string(p.get("type")) or None,
+                    description=ensure_string(p.get("description", "")),
+                    default=p.get("default"),
+                    required=safe_bool(p.get("required"), True),
+                ))
+            elif p:  # String or other non-None value
+                parameters.append(ParameterDoc(
+                    name=str(p),
+                    type=None,
+                    description="",
+                    default=None,
+                    required=True,
+                ))
 
-        # Safely extract returns - handle LLM returning string instead of dict
+        # Safely extract returns - handle LLM returning string, list, or dict
         raw_returns = doc_data.get("returns")
         returns_doc = None
         if raw_returns:
             if isinstance(raw_returns, dict):
                 returns_doc = ReturnDoc(
-                    type=ensure_string(raw_returns.get("type")),
+                    type=ensure_string(raw_returns.get("type")) or None,
                     description=ensure_string(raw_returns.get("description", "")),
                 )
+            elif isinstance(raw_returns, list) and raw_returns:
+                # LLM returned list of return values - take first or join
+                first_ret = raw_returns[0]
+                if isinstance(first_ret, dict):
+                    returns_doc = ReturnDoc(
+                        type=ensure_string(first_ret.get("type")) or None,
+                        description=ensure_string(first_ret.get("description", "")),
+                    )
+                else:
+                    returns_doc = ReturnDoc(type=None, description=ensure_string(first_ret))
             else:
                 returns_doc = ReturnDoc(type=None, description=ensure_string(raw_returns))
 
         # Safely extract raises - handle LLM returning strings instead of dicts
-        raw_raises = doc_data.get("raises", [])
-        if not isinstance(raw_raises, list):
+        raw_raises = doc_data.get("raises")
+        if raw_raises is None:
+            raw_raises = []
+        elif not isinstance(raw_raises, list):
             raw_raises = [raw_raises] if raw_raises else []
-        raises = [
-            ExceptionDoc(
-                type=ensure_string(e.get("type", "Exception")) if isinstance(e, dict) else str(e),
-                condition=ensure_string(e.get("condition", "")) if isinstance(e, dict) else "",
-            )
-            for e in raw_raises
-        ]
+        raises = []
+        for e in raw_raises:
+            if isinstance(e, dict):
+                raises.append(ExceptionDoc(
+                    type=ensure_string(e.get("type"), "Exception"),
+                    condition=ensure_string(e.get("condition", "")),
+                ))
+            elif e:
+                raises.append(ExceptionDoc(type=str(e), condition=""))
 
         # Extract and truncate summary to max 200 chars (model constraint)
         raw_summary = ensure_string(doc_data.get("summary") or doc_data.get("brief"))
@@ -1453,9 +1572,9 @@ class ConcreteDocumenterAgent(DocumenterAgent):
         # Extract description - handle dict/list instead of string
         raw_description = ensure_string(doc_data.get("description") or doc_data.get("detailed_description"))
 
-        # Handle examples - could be string instead of list
-        raw_examples = doc_data.get("examples", [])
-        examples = ensure_list(raw_examples)
+        # Handle examples - could be string, list of strings, or list of dicts
+        raw_examples = doc_data.get("examples")
+        examples = ensure_string_list(raw_examples)
 
         documentation = ComponentDocumentation(
             summary=raw_summary,
@@ -1471,27 +1590,52 @@ class ConcreteDocumenterAgent(DocumenterAgent):
         if not isinstance(cg_data, dict):
             cg_data = {}
 
-        # Filter out entries with empty component_id and handle non-dict entries
-        raw_callers = cg_data.get("callers", [])
-        if not isinstance(raw_callers, list):
-            raw_callers = []
-        callers_data = [
-            c for c in raw_callers
-            if isinstance(c, dict) and c.get("component_id", "").strip()
-        ]
+        def extract_component_id(value) -> str:
+            """Extract component_id, handling non-string values."""
+            if value is None:
+                return ""
+            if isinstance(value, str):
+                return value.strip()
+            if isinstance(value, dict):
+                # Maybe {"id": "...", "name": "..."} or similar
+                return str(value.get("id") or value.get("name") or value.get("component_id") or "")
+            return str(value).strip()
 
-        raw_callees = cg_data.get("callees", [])
+        # Filter out entries with empty component_id and handle non-dict entries
+        raw_callers = cg_data.get("callers") or []
+        if not isinstance(raw_callers, list):
+            raw_callers = [raw_callers] if raw_callers else []
+        callers_data = []
+        for c in raw_callers:
+            if isinstance(c, dict):
+                cid = extract_component_id(c.get("component_id"))
+                if cid:
+                    # Create new dict without original component_id to avoid type issues
+                    caller_dict = {k: v for k, v in c.items() if k != "component_id"}
+                    caller_dict["component_id"] = cid
+                    callers_data.append(caller_dict)
+            elif isinstance(c, str) and c.strip():
+                callers_data.append({"component_id": c.strip()})
+
+        raw_callees = cg_data.get("callees") or []
         if not isinstance(raw_callees, list):
-            raw_callees = []
-        callees_data = [
-            c for c in raw_callees
-            if isinstance(c, dict) and c.get("component_id", "").strip()
-        ]
+            raw_callees = [raw_callees] if raw_callees else []
+        callees_data = []
+        for c in raw_callees:
+            if isinstance(c, dict):
+                cid = extract_component_id(c.get("component_id"))
+                if cid:
+                    # Create new dict without original component_id to avoid type issues
+                    callee_dict = {k: v for k, v in c.items() if k != "component_id"}
+                    callee_dict["component_id"] = cid
+                    callees_data.append(callee_dict)
+            elif isinstance(c, str) and c.strip():
+                callees_data.append({"component_id": c.strip()})
 
         call_graph = CallGraphSection(
             callers=[
                 CallerRef(
-                    component_id=c.get("component_id", ""),
+                    component_id=c["component_id"],
                     call_site_line=safe_int(c.get("call_site_line")),
                     call_type=safe_call_type(c.get("call_type")),
                 )
@@ -1499,7 +1643,7 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             ],
             callees=[
                 CalleeRef(
-                    component_id=c.get("component_id", ""),
+                    component_id=c["component_id"],
                     call_site_line=safe_int(c.get("call_site_line")),
                     call_type=safe_call_type(c.get("call_type")),
                 )
@@ -1668,23 +1812,58 @@ class ConcreteValidatorAgent(ValidatorAgent):
         import json
         import re
 
-        def normalize_score(score: float | int | None, default: float = 1.0) -> float:
-            """Normalize LLM score to 0-1 range.
-
-            LLMs sometimes return scores on 0-10 scale instead of 0-1.
-            This normalizes and clamps to valid range.
-            """
+        def normalize_score(score, default: float = 1.0) -> float:
+            """Normalize LLM score to 0-1 range."""
             if score is None:
                 return default
-            try:
-                score = float(score)
-            except (ValueError, TypeError):
+            if isinstance(score, str):
+                score_lower = score.lower().strip()
+                score_map = {
+                    "very high": 0.95, "high": 0.85, "good": 0.85,
+                    "medium": 0.7, "moderate": 0.7, "average": 0.7,
+                    "low": 0.5, "poor": 0.5,
+                    "very low": 0.3, "bad": 0.3,
+                    "none": 0.1,
+                }
+                if score_lower in score_map:
+                    return score_map[score_lower]
+                try:
+                    score = float(score)
+                except (ValueError, TypeError):
+                    return default
+            elif not isinstance(score, (int, float)):
                 return default
-            # If score > 1, assume it's on 0-10 scale
+            else:
+                score = float(score)
             if score > 1.0:
                 score = score / 10.0
-            # Clamp to valid range
             return max(0.0, min(1.0, score))
+
+        def ensure_string(value, default: str = "") -> str:
+            """Convert value to string."""
+            if value is None:
+                return default
+            if isinstance(value, str):
+                return value
+            if isinstance(value, dict):
+                return " ".join(str(v) for v in value.values() if v)
+            if isinstance(value, list):
+                return " ".join(str(v) for v in value if v)
+            return str(value)
+
+        def ensure_list(value, default: list = None) -> list:
+            """Ensure value is a list."""
+            if default is None:
+                default = []
+            if value is None:
+                return default
+            if isinstance(value, list):
+                return value
+            if isinstance(value, str):
+                return [value] if value.strip() else default
+            if isinstance(value, dict):
+                return list(value.values())
+            return default
 
         # Strip markdown code fences if present (models sometimes wrap JSON in ```json ... ```)
         content = content.strip()
@@ -1697,51 +1876,78 @@ class ConcreteValidatorAgent(ValidatorAgent):
 
         def try_fix_json(text: str) -> str:
             """Attempt to fix common JSON syntax errors from LLMs."""
-            # Remove trailing commas before ] or }
+            if not text or not text.strip():
+                return "{}"
+            # Remove JavaScript-style comments
+            text = re.sub(r'//[^\n]*\n', '\n', text)
+            text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+            # Replace single quotes with double quotes
+            text = re.sub(r"(?<![a-zA-Z])'([^']*)'(?![a-zA-Z])", r'"\1"', text)
+            # Handle NaN, Infinity
+            text = re.sub(r'\bNaN\b', 'null', text)
+            text = re.sub(r'\bInfinity\b', '999999999', text)
+            text = re.sub(r'-Infinity\b', '-999999999', text)
+            # Remove trailing commas
             text = re.sub(r',\s*([}\]])', r'\1', text)
-            # Fix missing commas between elements (common: "value"  "key" -> "value", "key")
+            # Fix missing commas
             text = re.sub(r'"\s+(")', r'", \1', text)
             text = re.sub(r'(\d)\s+(")', r'\1, \2', text)
             text = re.sub(r'(true|false|null)\s+(")', r'\1, \2', text)
             text = re.sub(r'}\s+{', r'}, {', text)
             text = re.sub(r']\s+\[', r'], [', text)
+            # Fix unquoted property names
+            text = re.sub(r'{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'{"\1":', text)
+            text = re.sub(r',\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r',"\1":', text)
             return text
 
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError:
-            # Try to fix common JSON errors and retry
+        def safe_json_parse(text: str) -> dict | None:
+            """Try multiple strategies to parse JSON."""
+            if not text or not text.strip():
+                return {}
             try:
-                fixed_content = try_fix_json(content)
-                data = json.loads(fixed_content)
-                self._logger.warning(
-                    f"Fixed JSON syntax errors for validation of {component_id}"
-                )
-            except json.JSONDecodeError as e:
-                # Log detailed error info for debugging
-                content_preview = content[:200] if content else "<empty>"
-                self._logger.error(
-                    f"Failed to parse JSON response for validation of {component_id}: {e}\n"
-                    f"Content length: {len(content) if content else 0}, "
-                    f"Preview: {content_preview!r}"
-                )
-                return self._create_fallback_result(component_id, token_count)
+                return json.loads(text)
+            except json.JSONDecodeError:
+                pass
+            try:
+                return json.loads(try_fix_json(text))
+            except json.JSONDecodeError:
+                pass
+            json_match = re.search(r'\{[\s\S]*\}', text)
+            if json_match:
+                try:
+                    return json.loads(try_fix_json(json_match.group()))
+                except json.JSONDecodeError:
+                    pass
+            return None
 
-        # Handle case where model returns a list instead of dict
+        data = safe_json_parse(content)
+        if data is None:
+            content_preview = content[:200] if content else "<empty>"
+            self._logger.error(
+                f"Failed to parse JSON response for validation of {component_id}\n"
+                f"Content length: {len(content) if content else 0}, "
+                f"Preview: {content_preview!r}"
+            )
+            return self._create_fallback_result(component_id, token_count)
+
+        # Handle non-dict types
         if isinstance(data, list):
             if data and isinstance(data[0], dict):
-                self._logger.warning(
-                    f"Model returned list instead of dict for validation of {component_id}, using first element"
-                )
                 data = data[0]
             else:
-                self._logger.error(
-                    f"Model returned invalid list for validation of {component_id}"
-                )
                 return self._create_fallback_result(component_id, token_count)
+        elif isinstance(data, (str, int, float, bool)):
+            data = {}
 
-        # Parse validation status
-        status_str = data.get("validation_result", "warning")
+        # Parse validation status - normalize common LLM variations
+        status_str = ensure_string(data.get("validation_result"), "warning").lower().strip()
+        # Map common variations to canonical values
+        status_map = {
+            "pass": "pass", "passed": "pass", "ok": "pass", "success": "pass", "valid": "pass",
+            "fail": "fail", "failed": "fail", "error": "fail", "invalid": "fail",
+            "warning": "warning", "warn": "warning", "caution": "warning",
+        }
+        status_str = status_map.get(status_str, status_str)
         try:
             status = ValidationStatus(status_str)
         except ValueError:
@@ -1753,8 +1959,8 @@ class ConcreteValidatorAgent(ValidatorAgent):
             comp_data = {}
         completeness = CompletenessCheck(
             score=normalize_score(comp_data.get("score")),
-            missing_elements=comp_data.get("missing_elements", []),
-            extra_elements=comp_data.get("extra_elements", []),
+            missing_elements=ensure_list(comp_data.get("missing_elements")),
+            extra_elements=ensure_list(comp_data.get("extra_elements")),
         )
 
         # Parse call graph accuracy
@@ -1763,12 +1969,12 @@ class ConcreteValidatorAgent(ValidatorAgent):
             cg_data = {}
         call_graph_accuracy = CallGraphAccuracy(
             score=normalize_score(cg_data.get("score")),
-            verified_callees=cg_data.get("verified_callees", []),
-            missing_callees=cg_data.get("missing_callees", []),
-            false_callees=cg_data.get("false_callees", []),
-            verified_callers=cg_data.get("verified_callers", []),
-            missing_callers=cg_data.get("missing_callers", []),
-            false_callers=cg_data.get("false_callers", []),
+            verified_callees=ensure_list(cg_data.get("verified_callees")),
+            missing_callees=ensure_list(cg_data.get("missing_callees")),
+            false_callees=ensure_list(cg_data.get("false_callees")),
+            verified_callers=ensure_list(cg_data.get("verified_callers")),
+            missing_callers=ensure_list(cg_data.get("missing_callers")),
+            false_callers=ensure_list(cg_data.get("false_callers")),
         )
 
         # Parse description quality
@@ -1777,20 +1983,32 @@ class ConcreteValidatorAgent(ValidatorAgent):
             dq_data = {}
         description_quality = DescriptionQuality(
             score=normalize_score(dq_data.get("score")),
-            issues=dq_data.get("issues", []),
+            issues=ensure_list(dq_data.get("issues")),
         )
 
-        # Parse corrections
-        corrections = [
-            CorrectionApplied(
-                field=c.get("field", ""),
-                action=c.get("action", "modified"),
-                original_value=c.get("original_value"),
-                corrected_value=c.get("corrected_value"),
-                reason=c.get("reason", ""),
-            )
-            for c in data.get("corrections_applied", [])
-        ]
+        # Parse corrections - handle various formats
+        raw_corrections = data.get("corrections_applied") or data.get("corrections") or []
+        if not isinstance(raw_corrections, list):
+            raw_corrections = [raw_corrections] if raw_corrections else []
+        corrections = []
+        for c in raw_corrections:
+            if isinstance(c, dict):
+                corrections.append(CorrectionApplied(
+                    field=ensure_string(c.get("field"), "unknown"),
+                    action=ensure_string(c.get("action"), "modified"),
+                    original_value=c.get("original_value"),
+                    corrected_value=c.get("corrected_value"),
+                    reason=ensure_string(c.get("reason"), ""),
+                ))
+            elif isinstance(c, str):
+                # String correction - use as reason
+                corrections.append(CorrectionApplied(
+                    field="unknown",
+                    action="modified",
+                    original_value=None,
+                    corrected_value=None,
+                    reason=c,
+                ))
 
         # Create metadata
         metadata = ValidatorMetadata(
