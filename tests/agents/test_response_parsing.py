@@ -718,6 +718,66 @@ class TestValidatorEdgeCases:
         assert "summary" in result.description_quality.issues[0].lower() or "redundant" in result.description_quality.issues[0].lower()
 
 
+class TestParameterNameFix:
+    """Tests for fixing swapped parameter name/description."""
+
+    def test_description_in_name_field_is_fixed(self, documenter_config):
+        """When name field contains a description, generate placeholder name."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {
+                "summary": "Test function",
+                "description": "Does something",
+                "parameters": [
+                    {
+                        "name": "The name of the person to greet. This string will be inserted into the greeting message.",
+                        "type": "str",
+                        "description": "",
+                    }
+                ],
+            },
+            "call_graph": {"callers": [], "callees": []},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        # Should NOT crash and should have a valid param name
+        assert len(result.documentation.parameters) == 1
+        param = result.documentation.parameters[0]
+        # Name should be extracted (first word "The" is valid identifier, or placeholder)
+        assert param.name.isidentifier() or param.name.startswith("param")
+        # The original "name" content should be preserved somewhere (as description)
+        assert "person" in param.description.lower() or "greet" in param.description.lower()
+
+    def test_swapped_name_description_is_fixed(self, documenter_config):
+        """When name and description are swapped, fix them."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {
+                "summary": "Test function",
+                "description": "Does something",
+                "parameters": [
+                    {
+                        "name": "A long description that should not be a parameter name at all",
+                        "type": "str",
+                        "description": "username",  # This looks like the actual param name
+                    }
+                ],
+            },
+            "call_graph": {"callers": [], "callees": []},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert len(result.documentation.parameters) == 1
+        param = result.documentation.parameters[0]
+        # Should swap: "username" becomes name, long text becomes description
+        assert param.name == "username"
+        assert "long description" in param.description.lower()
+
+
 class TestRobustJsonParsing:
     """Tests for robust JSON parsing with malformed input."""
 

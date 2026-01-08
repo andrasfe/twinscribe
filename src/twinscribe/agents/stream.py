@@ -1580,6 +1580,49 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             # Try top-level fields if documentation section is empty
             doc_data = data
 
+        def sanitize_param_name(name: str, description: str, param_index: int) -> tuple[str, str]:
+            """Fix swapped name/description fields from LLM.
+
+            Returns (fixed_name, fixed_description).
+            If name looks like a description, swap them or generate placeholder.
+            """
+            name = ensure_string(name, "")
+            desc = ensure_string(description, "")
+
+            # Check if name looks like a description (not a valid identifier)
+            def is_valid_param_name(n: str) -> bool:
+                if not n:
+                    return False
+                # Allow *args, **kwargs patterns
+                clean = n.lstrip("*")
+                if not clean:
+                    return True  # Just "*" or "**"
+                # Must be valid Python identifier
+                return clean.isidentifier() or clean.replace("_", "").isalnum()
+
+            if is_valid_param_name(name):
+                return name, desc
+
+            # Name looks like a description - try to extract real name
+            # Check if description contains a short identifier
+            if desc and is_valid_param_name(desc.split()[0] if desc.split() else ""):
+                # Description starts with an identifier - might be swapped
+                first_word = desc.split()[0]
+                if len(first_word) < 30:  # Reasonable param name length
+                    return first_word, name  # Swap: use desc's first word as name, name as desc
+
+            # Try to extract parameter name from the description-like name
+            # Look for patterns like "name (str):" or "param_name:"
+            import re
+            match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)', name)
+            if match:
+                extracted = match.group(1)
+                if len(extracted) < 30:
+                    return extracted, name
+
+            # Last resort: generate placeholder name
+            return f"param{param_index + 1}", name if name else desc
+
         # Safely extract parameters - handle LLM returning strings instead of dicts
         raw_params = doc_data.get("parameters", [])
         if raw_params is None:
@@ -1587,20 +1630,26 @@ class ConcreteDocumenterAgent(DocumenterAgent):
         elif not isinstance(raw_params, list):
             raw_params = [raw_params] if raw_params else []
         parameters = []
-        for p in raw_params:
+        for idx, p in enumerate(raw_params):
             if isinstance(p, dict):
+                raw_name = p.get("name", "")
+                raw_desc = p.get("description", "")
+                fixed_name, fixed_desc = sanitize_param_name(raw_name, raw_desc, idx)
                 parameters.append(ParameterDoc(
-                    name=ensure_string(p.get("name"), "param"),
+                    name=fixed_name,
                     type=ensure_string(p.get("type")) or None,
-                    description=ensure_string(p.get("description", "")),
+                    description=fixed_desc,
                     default=p.get("default"),
                     required=safe_bool(p.get("required"), True),
                 ))
             elif p:  # String or other non-None value
+                # Single string could be name or description
+                p_str = str(p)
+                fixed_name, fixed_desc = sanitize_param_name(p_str, "", len(parameters))
                 parameters.append(ParameterDoc(
-                    name=str(p),
+                    name=fixed_name,
                     type=None,
-                    description="",
+                    description=fixed_desc,
                     default=None,
                     required=True,
                 ))
