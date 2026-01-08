@@ -24,14 +24,15 @@ class ValidatorInput(BaseModel):
     Attributes:
         documentation: Documentation output to validate
         source_code: Original source code of the component
-        ground_truth_call_graph: Static analysis call graph (authoritative)
+        ground_truth_call_graph: Optional static analysis call graph (hints, not authoritative)
         component_ast: Optional AST representation for detailed checks
     """
 
     documentation: DocumentationOutput = Field(..., description="Documentation to validate")
     source_code: str = Field(..., description="Original source code")
-    ground_truth_call_graph: CallGraph = Field(
-        ..., description="Static analysis call graph (ground truth)"
+    ground_truth_call_graph: CallGraph | None = Field(
+        default=None,
+        description="Static analysis call graph (optional hints, not authoritative)",
     )
     component_ast: dict | None = Field(
         default=None,
@@ -120,12 +121,13 @@ class ValidatorAgent(BaseAgent[ValidatorInput, ValidationResult]):
     """Abstract base class for validator agents.
 
     Validator agents verify documentation completeness and call graph
-    accuracy against source code and static analysis ground truth.
+    accuracy against source code. Static analysis is used as optional
+    hints, but the final source of truth is dual-stream consensus.
 
     The agent receives:
     - Documentation output from the documenter
     - Original source code
-    - Static analysis call graph (ground truth)
+    - Optional static analysis call graph (hints, not authoritative)
 
     The agent produces:
     - Validation status (pass/fail/warning)
@@ -133,17 +135,20 @@ class ValidatorAgent(BaseAgent[ValidatorInput, ValidationResult]):
     - Call graph accuracy results
     - List of corrections applied
 
+    Note: Static analysis provides helpful hints but does NOT auto-correct.
+    The dual-stream consensus (A == B agreement) is the authoritative mechanism.
+
     Reference: Spec section 3.2
     """
 
     # System prompt template for validator agents
     SYSTEM_PROMPT = """You are a documentation validation agent. Your task is to verify that
-documentation is complete, high-quality, and that call graph linkages are accurate.
+documentation is complete, high-quality, and that call graph linkages are reasonable.
 
 You have access to:
 1. The documentation to validate
 2. The original source code
-3. Static analysis call graph (THIS IS GROUND TRUTH)
+3. Static analysis call graph (optional hints for reference, NOT authoritative)
 
 VALIDATION RULES:
 
@@ -171,11 +176,13 @@ VALIDATION RULES:
    - All exceptions that can be raised must be documented
 
 3. CALL GRAPH ACCURACY:
-   - Call graph MUST match static analysis (static analysis wins if conflict)
-   - If you find discrepancies between documented call graph and static analysis:
-     - Trust static analysis
-     - Flag the discrepancy
-     - Apply correction
+   - Validate that the documented call graph is reasonable based on the source code
+   - If static analysis hints are available, use them as guidance but NOT as authority
+   - The dual-stream consensus (agreement between Stream A and B) will be the true authority
+   - Flag potential discrepancies but do not auto-correct based solely on static analysis
+
+IMPORTANT: Static analysis provides helpful hints but should not override your judgment
+based on the source code. The final source of truth is dual-stream consensus.
 
 Output validation results in the specified JSON schema. Include description_quality
 assessment with a score and list of specific issues found."""
@@ -235,9 +242,9 @@ assessment with a score and list of specific issues found."""
         doc = input_data.documentation
         gt = input_data.ground_truth_call_graph
 
-        # Get ground truth edges for this component
-        gt_callees = gt.get_callees(doc.component_id)
-        gt_callers = gt.get_callers(doc.component_id)
+        # Get ground truth edges for this component (if available)
+        gt_callees = gt.get_callees(doc.component_id) if gt else []
+        gt_callers = gt.get_callers(doc.component_id) if gt else []
 
         lines = [
             "## Documentation to Validate",
@@ -313,26 +320,33 @@ assessment with a score and list of specific issues found."""
                 "```python",
                 input_data.source_code,
                 "```",
-                "",
-                "## Ground Truth Call Graph (Static Analysis)",
-                "**Callees:**",
             ]
         )
-        for edge in gt_callees:
-            lines.append(f"- {edge.callee} (line {edge.call_site_line})")
-        if not gt_callees:
-            lines.append("_None_")
 
-        lines.extend(
-            [
-                "",
-                "**Callers:**",
-            ]
-        )
-        for edge in gt_callers:
-            lines.append(f"- {edge.caller} (line {edge.call_site_line})")
-        if not gt_callers:
-            lines.append("_None_")
+        # Only include static analysis hints if available
+        if gt is not None:
+            lines.extend(
+                [
+                    "",
+                    "## Static Analysis Hints (for reference only, NOT authoritative)",
+                    "**Callees:**",
+                ]
+            )
+            for edge in gt_callees:
+                lines.append(f"- {edge.callee} (line {edge.call_site_line})")
+            if not gt_callees:
+                lines.append("_None_")
+
+            lines.extend(
+                [
+                    "",
+                    "**Callers:**",
+                ]
+            )
+            for edge in gt_callers:
+                lines.append(f"- {edge.caller} (line {edge.call_site_line})")
+            if not gt_callers:
+                lines.append("_None_")
 
         lines.extend(
             [
@@ -353,9 +367,12 @@ assessment with a score and list of specific issues found."""
                 "9. Check all exceptions are documented",
                 "",
                 "### Call Graph Accuracy",
-                "10. Compare documented callees against ground truth",
-                "11. Compare documented callers against ground truth",
-                "12. Apply corrections for any call graph discrepancies",
+                "10. Validate documented call graph is reasonable based on source code",
+                "11. Use static analysis hints (if available) as guidance, not authority",
+                "12. Flag potential issues but do NOT auto-correct based solely on hints",
+                "",
+                "IMPORTANT: Static analysis hints are for reference only.",
+                "The final source of truth is dual-stream consensus (Stream A == Stream B).",
                 "",
                 "Output validation results in the specified JSON format.",
             ]

@@ -373,9 +373,9 @@ class TestCallGraphComparison:
         assert len(discrepancies) == 1
         disc = discrepancies[0]
         assert disc.type == DiscrepancyType.CALL_GRAPH_EDGE
-        # module.extra is NOT in ground truth, so ground truth wins
-        assert disc.resolution == ResolutionAction.ACCEPT_GROUND_TRUTH
-        assert disc.confidence == 0.99
+        # module.extra is NOT in ground truth - needs human review (ground truth no longer auto-resolves)
+        assert disc.resolution == ResolutionAction.NEEDS_HUMAN_REVIEW
+        assert disc.confidence == 0.5
 
     def test_compare_call_graphs_no_discrepancy_when_matching(
         self,
@@ -408,15 +408,36 @@ class TestCallGraphComparison:
 
 
 class TestResolutionLogic:
-    """Tests for discrepancy resolution logic."""
+    """Tests for discrepancy resolution logic.
 
-    def test_determine_resolution_accepts_stream_a_matching_gt(
+    Note: Ground truth is now used as hints only, not authoritative.
+    Consensus (A == B) is the primary resolution mechanism.
+    """
+
+    def test_determine_resolution_consensus_takes_precedence(
         self, comparator_config: ComparatorConfig
     ) -> None:
-        """Test resolution accepts Stream A when it matches ground truth."""
+        """Test consensus (A == B) takes precedence over ground truth hint."""
         agent = ConcreteComparatorAgent(config=comparator_config)
 
-        resolution, confidence = agent._determine_resolution(
+        resolution, confidence, source = agent._determine_resolution(
+            discrepancy_type="call_graph_edge",
+            stream_a_value=True,
+            stream_b_value=True,  # Same as A - consensus
+            ground_truth=False,  # Different from consensus
+        )
+
+        assert resolution == "accept_consensus"
+        assert confidence == 0.99
+        assert source == "consensus"
+
+    def test_determine_resolution_hint_suggests_stream_a(
+        self, comparator_config: ComparatorConfig
+    ) -> None:
+        """Test resolution suggests Stream A when it matches ground truth hint (no consensus)."""
+        agent = ConcreteComparatorAgent(config=comparator_config)
+
+        resolution, confidence, source = agent._determine_resolution(
             discrepancy_type="call_graph_edge",
             stream_a_value=True,
             stream_b_value=False,
@@ -424,15 +445,16 @@ class TestResolutionLogic:
         )
 
         assert resolution == "accept_stream_a"
-        assert confidence == 0.99
+        assert confidence == 0.7  # Lower confidence - hint, not authority
+        assert source == "ground_truth_hint"
 
-    def test_determine_resolution_accepts_stream_b_matching_gt(
+    def test_determine_resolution_hint_suggests_stream_b(
         self, comparator_config: ComparatorConfig
     ) -> None:
-        """Test resolution accepts Stream B when it matches ground truth."""
+        """Test resolution suggests Stream B when it matches ground truth hint (no consensus)."""
         agent = ConcreteComparatorAgent(config=comparator_config)
 
-        resolution, confidence = agent._determine_resolution(
+        resolution, confidence, source = agent._determine_resolution(
             discrepancy_type="call_graph_edge",
             stream_a_value=False,
             stream_b_value=True,
@@ -440,23 +462,26 @@ class TestResolutionLogic:
         )
 
         assert resolution == "accept_stream_b"
-        assert confidence == 0.99
+        assert confidence == 0.7  # Lower confidence - hint, not authority
+        assert source == "ground_truth_hint"
 
-    def test_determine_resolution_accepts_ground_truth_when_neither_match(
+    def test_determine_resolution_needs_review_when_neither_match_hint(
         self, comparator_config: ComparatorConfig
     ) -> None:
-        """Test resolution accepts ground truth when neither stream matches."""
+        """Test needs human review when neither stream matches hint."""
         agent = ConcreteComparatorAgent(config=comparator_config)
 
-        resolution, confidence = agent._determine_resolution(
+        resolution, confidence, source = agent._determine_resolution(
             discrepancy_type="call_graph_edge",
             stream_a_value="value_a",
             stream_b_value="value_b",
             ground_truth="ground_truth_value",
         )
 
-        assert resolution == "accept_ground_truth"
-        assert confidence == 0.99
+        # Neither matches hint - needs human review
+        assert resolution == "needs_human_review"
+        assert confidence == 0.5
+        assert source == "unresolved"
 
     def test_determine_resolution_needs_review_for_doc_content(
         self, comparator_config: ComparatorConfig
@@ -464,7 +489,7 @@ class TestResolutionLogic:
         """Test documentation content requires human review."""
         agent = ConcreteComparatorAgent(config=comparator_config)
 
-        resolution, confidence = agent._determine_resolution(
+        resolution, confidence, source = agent._determine_resolution(
             discrepancy_type="documentation_content",
             stream_a_value="Summary A",
             stream_b_value="Summary B",
@@ -473,6 +498,7 @@ class TestResolutionLogic:
 
         assert resolution == "needs_human_review"
         assert confidence == 0.5
+        assert source == "unresolved"
 
 
 class TestDiscrepancyTypeMapping:

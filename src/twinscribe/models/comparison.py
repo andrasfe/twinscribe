@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, computed_field
 
-from twinscribe.models.base import DiscrepancyType, ResolutionAction
+from twinscribe.models.base import DiscrepancyType, ResolutionAction, ResolutionSource
 
 
 class BeadsTicketRef(BaseModel):
@@ -92,6 +92,10 @@ class Discrepancy(BaseModel):
         default=1,
         ge=1,
         description="Iteration when discovered",
+    )
+    resolution_source: ResolutionSource = Field(
+        default=ResolutionSource.UNRESOLVED,
+        description="Source of the resolution (consensus, ground_truth_hint, human_review, etc.)",
     )
 
     @computed_field

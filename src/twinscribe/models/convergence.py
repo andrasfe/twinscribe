@@ -2,32 +2,48 @@
 Convergence tracking models.
 
 These models track the convergence process across iterations
-as defined in spec section 4.2.
+as defined in spec section 4.2, with support for dual-stream
+consensus-based resolution of call graphs.
 """
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, computed_field
+
+if TYPE_CHECKING:
+    from twinscribe.models.call_graph import StreamCallGraphComparison
 
 
 class ConvergenceCriteria(BaseModel):
     """Criteria for determining when documentation streams have converged.
 
-    Based on spec section 4.2 convergence criteria.
+    Based on spec section 4.2 convergence criteria with enhanced support
+    for dual-stream consensus.
 
     Attributes:
-        max_iterations: Maximum iterations before forced convergence
-        call_graph_match_rate: Required match rate for call graphs
-        documentation_similarity: Required semantic similarity
-        max_open_discrepancies: Max allowed unresolved non-blocking issues
-        blocking_discrepancy_types: Discrepancy types that prevent convergence
+        min_agreement_rate: Minimum percentage of components that must have
+            identical call graphs (95% = 0.95). Components below this threshold
+            trigger continued iteration or escalation.
+        max_iterations: Maximum iterations before escalating to Beads.
+            After this limit, divergent components are escalated for human review.
+        call_graph_match_rate: Required match rate for call graphs (legacy).
+        documentation_similarity: Required semantic similarity threshold.
+        max_open_discrepancies: Max allowed unresolved non-blocking issues.
+        blocking_discrepancy_types: Discrepancy types that prevent convergence.
     """
 
+    min_agreement_rate: float = Field(
+        default=0.95,
+        ge=0.0,
+        le=1.0,
+        description="Minimum percentage of components with identical call graphs (95%)",
+    )
     max_iterations: int = Field(
         default=5,
         ge=1,
         le=20,
-        description="Maximum iterations allowed",
+        description="Maximum iterations before escalating divergent components to Beads",
     )
     call_graph_match_rate: float = Field(
         default=0.98,
@@ -79,6 +95,197 @@ class ConvergenceCriteria(BaseModel):
             and doc_similarity >= self.documentation_similarity
             and open_discrepancies <= self.max_open_discrepancies
             and not has_blocking
+        )
+
+    def is_agreement_sufficient(self, agreement_rate: float) -> bool:
+        """Check if the agreement rate meets the minimum threshold.
+
+        Args:
+            agreement_rate: Current agreement rate between streams (0.0-1.0)
+
+        Returns:
+            True if agreement rate meets or exceeds min_agreement_rate
+        """
+        return agreement_rate >= self.min_agreement_rate
+
+
+class ConvergenceStatus(BaseModel):
+    """Status of convergence between streams for call graphs.
+
+    This model provides detailed information about which components
+    have converged (streams agree) and which are still divergent.
+
+    Attributes:
+        is_converged: True if agreement rate meets criteria
+        agreement_rate: Percentage of components with identical call graphs
+        iteration: Current iteration number
+        converged_components: List of component IDs where streams agree
+        divergent_components: List of component IDs where streams disagree
+    """
+
+    is_converged: bool = Field(
+        default=False,
+        description="True if streams have achieved consensus",
+    )
+    agreement_rate: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Percentage of components with identical call graphs",
+    )
+    iteration: int = Field(
+        default=1,
+        ge=1,
+        description="Current iteration number",
+    )
+    converged_components: list[str] = Field(
+        default_factory=list,
+        description="Component IDs where Stream A == Stream B",
+    )
+    divergent_components: list[str] = Field(
+        default_factory=list,
+        description="Component IDs where streams still disagree",
+    )
+
+    def should_continue_iterating(self, criteria: ConvergenceCriteria) -> bool:
+        """Check if iteration should continue or stop.
+
+        Iteration should continue if:
+        - Not yet converged (agreement rate below threshold)
+        - Haven't reached max iterations yet
+
+        Args:
+            criteria: Convergence criteria to check against
+
+        Returns:
+            True if should continue iterating, False if should stop
+        """
+        # If already converged, no need to continue
+        if self.is_converged:
+            return False
+
+        # If at or beyond max iterations, stop
+        if self.iteration >= criteria.max_iterations:
+            return False
+
+        # Continue iterating to try to achieve convergence
+        return True
+
+    @computed_field
+    @property
+    def total_components(self) -> int:
+        """Total number of components evaluated."""
+        return len(self.converged_components) + len(self.divergent_components)
+
+    @computed_field
+    @property
+    def divergent_count(self) -> int:
+        """Number of components that are still divergent."""
+        return len(self.divergent_components)
+
+
+class ConvergenceResult(BaseModel):
+    """Final convergence result after all iterations complete.
+
+    This model captures the outcome of the convergence process,
+    indicating which components achieved consensus and which
+    need to be escalated to Beads for human review.
+
+    Attributes:
+        status: Final status - "converged", "partially_converged", or "divergent"
+        final_agreement_rate: Agreement rate at end of iterations
+        iterations_used: Number of iterations performed
+        accepted_by_consensus: Components where A == B (accepted as truth)
+        escalated_to_beads: Components requiring human review via Beads
+        iteration_history: Agreement rates per iteration for debugging
+    """
+
+    status: str = Field(
+        default="pending",
+        description="Final convergence status",
+        examples=["converged", "partially_converged", "divergent"],
+    )
+    final_agreement_rate: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Final agreement rate between streams",
+    )
+    iterations_used: int = Field(
+        default=0,
+        ge=0,
+        description="Number of iterations performed",
+    )
+    accepted_by_consensus: list[str] = Field(
+        default_factory=list,
+        description="Component IDs accepted via dual-stream consensus (A == B)",
+    )
+    escalated_to_beads: list[str] = Field(
+        default_factory=list,
+        description="Component IDs requiring human review via Beads",
+    )
+    iteration_history: list[float] = Field(
+        default_factory=list,
+        description="Agreement rate at each iteration",
+    )
+
+    @computed_field
+    @property
+    def is_fully_converged(self) -> bool:
+        """True if all components converged (no escalations needed)."""
+        return self.status == "converged" and len(self.escalated_to_beads) == 0
+
+    @computed_field
+    @property
+    def escalation_count(self) -> int:
+        """Number of components escalated to Beads."""
+        return len(self.escalated_to_beads)
+
+    @computed_field
+    @property
+    def consensus_count(self) -> int:
+        """Number of components accepted by consensus."""
+        return len(self.accepted_by_consensus)
+
+    @classmethod
+    def from_convergence_status(
+        cls,
+        status: "ConvergenceStatus",
+        criteria: ConvergenceCriteria,
+        iteration_history: list[float] | None = None,
+    ) -> "ConvergenceResult":
+        """Create a ConvergenceResult from a ConvergenceStatus.
+
+        Args:
+            status: Current convergence status
+            criteria: Convergence criteria used
+            iteration_history: Optional list of agreement rates per iteration
+
+        Returns:
+            ConvergenceResult summarizing the outcome
+        """
+        # Determine final status
+        if status.is_converged:
+            final_status = "converged"
+        elif status.agreement_rate >= 0.5:
+            final_status = "partially_converged"
+        else:
+            final_status = "divergent"
+
+        # Components that didn't converge after max iterations go to Beads
+        escalated = (
+            status.divergent_components
+            if status.iteration >= criteria.max_iterations
+            else []
+        )
+
+        return cls(
+            status=final_status,
+            final_agreement_rate=status.agreement_rate,
+            iterations_used=status.iteration,
+            accepted_by_consensus=status.converged_components,
+            escalated_to_beads=escalated,
+            iteration_history=iteration_history or [],
         )
 
 

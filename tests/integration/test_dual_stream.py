@@ -595,10 +595,11 @@ class TestGroundTruthResolution:
         # Should detect the missing callee in Stream B
         assert len(call_graph_discs) >= 1
 
-        # Resolution should accept Stream A (matches ground truth)
+        # Resolution should suggest Stream A (matches ground truth hint)
+        # Note: Confidence is now 0.7 (hint-based) instead of 0.99 (authoritative)
         for disc in call_graph_discs:
             assert disc.resolution == ResolutionAction.ACCEPT_STREAM_A
-            assert disc.confidence == 0.99
+            assert disc.confidence == 0.7  # Hint-based, not authoritative
 
 
 # =============================================================================

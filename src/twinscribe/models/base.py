@@ -72,9 +72,25 @@ class ResolutionAction(str, Enum):
     ACCEPT_STREAM_A = "accept_stream_a"
     ACCEPT_STREAM_B = "accept_stream_b"
     ACCEPT_GROUND_TRUTH = "accept_ground_truth"
+    ACCEPT_CONSENSUS = "accept_consensus"  # Both streams agree
     MERGE_BOTH = "merge_both"
     NEEDS_HUMAN_REVIEW = "needs_human_review"
     DEFERRED = "deferred"
+
+
+class ResolutionSource(str, Enum):
+    """Source of the resolution for a discrepancy.
+
+    Tracks whether the resolution came from consensus (both streams agree),
+    ground truth hints, or human review. This is used for auditing and
+    to understand how discrepancies were resolved.
+    """
+
+    CONSENSUS = "consensus"  # Both streams agreed (A == B)
+    GROUND_TRUTH_HINT = "ground_truth_hint"  # Resolved using static analysis as hint
+    HUMAN_REVIEW = "human_review"  # Resolved by human via Beads
+    AUTO_RESOLVED = "auto_resolved"  # System auto-resolved (e.g., one stream missing)
+    UNRESOLVED = "unresolved"  # Not yet resolved
 
 
 class ModelTier(str, Enum):

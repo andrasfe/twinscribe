@@ -43,6 +43,10 @@ from twinscribe.analysis.default_oracle import (
     DefaultStaticAnalysisOracle,
     create_python_oracle,
 )
+from twinscribe.analysis.null_oracle import (
+    NullStaticAnalysisOracle,
+    create_null_oracle,
+)
 from twinscribe.analysis.normalizer import (
     CallGraphNormalizer,
     NormalizationConfig,
@@ -60,9 +64,11 @@ __all__ = [
     # Main oracle
     "StaticAnalysisOracle",
     "DefaultStaticAnalysisOracle",
+    "NullStaticAnalysisOracle",
     "OracleConfig",
     "OracleFactory",
     "create_python_oracle",
+    "create_null_oracle",
     # Analyzer base
     "Analyzer",
     "AnalyzerConfig",

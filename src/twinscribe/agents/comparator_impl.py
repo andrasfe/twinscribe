@@ -27,7 +27,7 @@ from twinscribe.beads.templates import (
     DiscrepancyTemplateData,
     TicketTemplateEngine,
 )
-from twinscribe.models.base import DiscrepancyType, ResolutionAction
+from twinscribe.models.base import DiscrepancyType, ResolutionAction, ResolutionSource
 from twinscribe.models.call_graph import CallGraph
 from twinscribe.models.comparison import (
     BeadsTicketRef,
@@ -145,7 +145,7 @@ class ConcreteComparatorAgent(ComparatorAgent):
         self,
         stream_a_output: StreamOutput,
         stream_b_output: StreamOutput,
-        ground_truth_call_graph: CallGraph,
+        ground_truth_call_graph: CallGraph | None = None,
         iteration: int = 1,
     ) -> ComparisonResult:
         """Compare outputs from both streams.
@@ -156,7 +156,7 @@ class ConcreteComparatorAgent(ComparatorAgent):
         Args:
             stream_a_output: Validated output from Stream A
             stream_b_output: Validated output from Stream B
-            ground_truth_call_graph: Static analysis call graph (authoritative)
+            ground_truth_call_graph: Optional static analysis call graph (hints, not authoritative)
             iteration: Current iteration number (default 1)
 
         Returns:
@@ -178,11 +178,15 @@ class ConcreteComparatorAgent(ComparatorAgent):
         """Compare outputs from both streams.
 
         Main entry point for comparison. Compares each component from both
-        streams, identifies discrepancies, resolves using ground truth where
-        possible, and generates Beads tickets for unresolved issues.
+        streams, identifies discrepancies using dual-stream consensus as the
+        source of truth, and generates Beads tickets for unresolved issues.
+
+        Ground truth (static analysis) is used as optional hints to inform
+        resolution suggestions, but does NOT auto-resolve discrepancies.
+        Consensus (A == B agreement) is the authoritative mechanism.
 
         Args:
-            input_data: Input containing both stream outputs and ground truth
+            input_data: Input containing both stream outputs and optional ground truth hints
 
         Returns:
             Comparison result with discrepancies and convergence status
@@ -196,7 +200,7 @@ class ConcreteComparatorAgent(ComparatorAgent):
 
         start_time = time.time()
 
-        # Validate input
+        # Validate input (ground truth is now optional)
         self._validate_input(input_data)
 
         # Generate comparison ID
@@ -238,24 +242,35 @@ class ConcreteComparatorAgent(ComparatorAgent):
 
             all_discrepancies.extend(discrepancies)
 
-        # Resolve discrepancies and generate tickets
-        resolved_by_gt = 0
+        # Process discrepancies and determine resolution needs
+        # Note: Ground truth no longer auto-resolves - consensus (A == B) is the authority
+        resolved_by_consensus = 0
+        resolved_by_hint = 0
         requires_human = 0
 
         for discrepancy in all_discrepancies:
-            # Auto-resolve call graph discrepancies using ground truth
-            if discrepancy.is_call_graph_related:
-                self._resolve_with_ground_truth(discrepancy, input_data.ground_truth_call_graph)
-                if discrepancy.is_resolved:
-                    resolved_by_gt += 1
-                    continue
-
             # Check if discrepancy was previously resolved
             if discrepancy.discrepancy_id in input_data.resolved_discrepancies:
                 discrepancy.resolution = ResolutionAction.ACCEPT_STREAM_A  # Placeholder
+                discrepancy.resolution_source = ResolutionSource.HUMAN_REVIEW
                 continue
 
-            # Determine if human review is needed
+            # Track resolution source statistics
+            if discrepancy.resolution_source == ResolutionSource.CONSENSUS:
+                resolved_by_consensus += 1
+                continue
+            elif discrepancy.resolution_source == ResolutionSource.GROUND_TRUTH_HINT:
+                # Ground truth hint suggests a resolution, but with lower confidence
+                # Still count as needing review if confidence is below threshold
+                resolved_by_hint += 1
+                if discrepancy.confidence < self.comparator_config.confidence_threshold:
+                    discrepancy.requires_beads = True
+                    requires_human += 1
+            elif discrepancy.resolution_source == ResolutionSource.AUTO_RESOLVED:
+                # Auto-resolved (e.g., one stream missing)
+                continue
+
+            # Determine if human review is needed for unresolved discrepancies
             if (
                 discrepancy.confidence < self.comparator_config.confidence_threshold
                 and not discrepancy.is_resolved
@@ -295,6 +310,7 @@ class ConcreteComparatorAgent(ComparatorAgent):
         # Build result
         duration_ms = int((time.time() - start_time) * 1000)
 
+        # Note: resolved_by_ground_truth now tracks hint-based suggestions, not auto-resolutions
         result = ComparisonResult(
             comparison_id=comparison_id,
             iteration=input_data.iteration,
@@ -302,7 +318,7 @@ class ConcreteComparatorAgent(ComparatorAgent):
                 total_components=len(all_components),
                 identical=identical_count,
                 discrepancies=len(all_discrepancies),
-                resolved_by_ground_truth=resolved_by_gt,
+                resolved_by_ground_truth=resolved_by_hint,  # Now tracks hint-based suggestions
                 requires_human_review=requires_human,
             ),
             discrepancies=all_discrepancies,
@@ -330,18 +346,19 @@ class ConcreteComparatorAgent(ComparatorAgent):
         component_id: str,
         stream_a_doc: dict | None,
         stream_b_doc: dict | None,
-        ground_truth: CallGraph,
+        ground_truth: CallGraph | None = None,
     ) -> list[Discrepancy]:
         """Compare documentation for a single component.
 
         Performs detailed comparison between stream outputs for a single
-        component, using LLM to identify semantic discrepancies.
+        component, using dual-stream consensus as the source of truth.
+        Ground truth (static analysis) is used as optional hints only.
 
         Args:
             component_id: Component being compared
             stream_a_doc: Documentation from Stream A (or None if missing)
             stream_b_doc: Documentation from Stream B (or None if missing)
-            ground_truth: Static analysis call graph
+            ground_truth: Optional static analysis call graph (hints only)
 
         Returns:
             List of discrepancies found for this component
@@ -363,6 +380,7 @@ class ConcreteComparatorAgent(ComparatorAgent):
                     stream_b_value="present",
                     resolution=ResolutionAction.ACCEPT_STREAM_B,
                     confidence=0.9,
+                    resolution_source=ResolutionSource.AUTO_RESOLVED,
                 )
             )
             return discrepancies
@@ -377,21 +395,22 @@ class ConcreteComparatorAgent(ComparatorAgent):
                     stream_b_value=None,
                     resolution=ResolutionAction.ACCEPT_STREAM_A,
                     confidence=0.9,
+                    resolution_source=ResolutionSource.AUTO_RESOLVED,
                 )
             )
             return discrepancies
 
-        # Get ground truth call graph info for this component
-        gt_callees = ground_truth.get_callees(component_id)
-        gt_callers = ground_truth.get_callers(component_id)
+        # Get ground truth call graph info for this component (optional hints)
+        gt_callees = ground_truth.get_callees(component_id) if ground_truth else []
+        gt_callers = ground_truth.get_callers(component_id) if ground_truth else []
 
-        # Compare call graphs first (can be resolved deterministically)
+        # Compare call graphs using consensus logic
         call_graph_discrepancies = self._compare_call_graphs(
             component_id=component_id,
             stream_a_doc=stream_a_doc,
             stream_b_doc=stream_b_doc,
-            gt_callees=gt_callees,
-            gt_callers=gt_callers,
+            gt_callees=gt_callees if ground_truth else None,
+            gt_callers=gt_callers if ground_truth else None,
         )
         discrepancies.extend(call_graph_discrepancies)
 
@@ -401,8 +420,8 @@ class ConcreteComparatorAgent(ComparatorAgent):
                 component_id=component_id,
                 stream_a_doc=stream_a_doc,
                 stream_b_doc=stream_b_doc,
-                gt_callees=gt_callees,
-                gt_callers=gt_callers,
+                gt_callees=gt_callees if ground_truth else None,
+                gt_callers=gt_callers if ground_truth else None,
             )
             discrepancies.extend(semantic_discrepancies)
 
@@ -486,6 +505,8 @@ class ConcreteComparatorAgent(ComparatorAgent):
     def _validate_input(self, input_data: ComparatorInput) -> None:
         """Validate comparison input.
 
+        Note: ground_truth_call_graph is optional and used as hints only.
+
         Args:
             input_data: Input to validate
 
@@ -496,8 +517,7 @@ class ConcreteComparatorAgent(ComparatorAgent):
             raise ValueError("stream_a_output is required")
         if not input_data.stream_b_output:
             raise ValueError("stream_b_output is required")
-        if not input_data.ground_truth_call_graph:
-            raise ValueError("ground_truth_call_graph is required")
+        # ground_truth_call_graph is now optional - no validation needed
 
     def _get_component_doc(self, stream_output: StreamOutput, component_id: str) -> dict | None:
         """Get component documentation as a dict.
@@ -547,17 +567,21 @@ class ConcreteComparatorAgent(ComparatorAgent):
         component_id: str,
         stream_a_doc: dict,
         stream_b_doc: dict,
-        gt_callees: list,
-        gt_callers: list,
+        gt_callees: list | None = None,
+        gt_callers: list | None = None,
     ) -> list[Discrepancy]:
-        """Compare call graph information between streams.
+        """Compare call graph information between streams using consensus logic.
+
+        Uses dual-stream consensus (A == B agreement) as the source of truth.
+        Ground truth from static analysis is used as optional hints only and
+        does NOT auto-resolve discrepancies.
 
         Args:
             component_id: Component being compared
             stream_a_doc: Stream A documentation
             stream_b_doc: Stream B documentation
-            gt_callees: Ground truth callees
-            gt_callers: Ground truth callers
+            gt_callees: Optional ground truth callees (hints only)
+            gt_callers: Optional ground truth callers (hints only)
 
         Returns:
             List of call graph discrepancies
@@ -570,33 +594,49 @@ class ConcreteComparatorAgent(ComparatorAgent):
 
         a_callees = {c.get("component_id", "") for c in a_call_graph.get("callees", [])}
         b_callees = {c.get("component_id", "") for c in b_call_graph.get("callees", [])}
-        gt_callee_ids = {e.callee for e in gt_callees}
+        gt_callee_ids = {e.callee for e in gt_callees} if gt_callees else set()
 
         a_callers = {c.get("component_id", "") for c in a_call_graph.get("callers", [])}
         b_callers = {c.get("component_id", "") for c in b_call_graph.get("callers", [])}
-        gt_caller_ids = {e.caller for e in gt_callers}
+        gt_caller_ids = {e.caller for e in gt_callers} if gt_callers else set()
 
-        # Check for discrepancies in callees
+        # CONSENSUS CHECK: If streams agree, no discrepancy (consensus is truth)
+        # Only create discrepancies when streams DISAGREE
         if a_callees != b_callees:
             only_in_a = a_callees - b_callees
             only_in_b = b_callees - a_callees
 
             for callee in only_in_a | only_in_b:
-                in_ground_truth = callee in gt_callee_ids
                 a_has = callee in a_callees
                 b_has = callee in b_callees
 
-                # Determine resolution based on ground truth
-                if in_ground_truth:
-                    resolution, confidence = (
-                        (ResolutionAction.ACCEPT_STREAM_A, 0.99)
-                        if a_has
-                        else (ResolutionAction.ACCEPT_STREAM_B, 0.99)
-                    )
+                # Streams disagree - this IS a discrepancy
+                # Ground truth provides hints but does NOT auto-resolve
+                in_ground_truth = callee in gt_callee_ids if gt_callee_ids else None
+
+                # Determine resolution suggestion (not auto-resolution)
+                if in_ground_truth is not None:
+                    # Ground truth hint available
+                    if in_ground_truth and a_has:
+                        # Stream A matches hint
+                        resolution = ResolutionAction.ACCEPT_STREAM_A
+                        confidence = 0.7  # Lower confidence - no consensus
+                        resolution_source = ResolutionSource.GROUND_TRUTH_HINT
+                    elif in_ground_truth and b_has:
+                        # Stream B matches hint
+                        resolution = ResolutionAction.ACCEPT_STREAM_B
+                        confidence = 0.7
+                        resolution_source = ResolutionSource.GROUND_TRUTH_HINT
+                    else:
+                        # Neither matches hint - needs human review
+                        resolution = ResolutionAction.NEEDS_HUMAN_REVIEW
+                        confidence = 0.5
+                        resolution_source = ResolutionSource.UNRESOLVED
                 else:
-                    # Neither matches ground truth - edge should not exist
-                    resolution = ResolutionAction.ACCEPT_GROUND_TRUTH
-                    confidence = 0.99
+                    # No ground truth hint available - needs human review
+                    resolution = ResolutionAction.NEEDS_HUMAN_REVIEW
+                    confidence = 0.5
+                    resolution_source = ResolutionSource.UNRESOLVED
 
                 discrepancies.append(
                     Discrepancy(
@@ -608,28 +648,38 @@ class ConcreteComparatorAgent(ComparatorAgent):
                         ground_truth=in_ground_truth,
                         resolution=resolution,
                         confidence=confidence,
+                        resolution_source=resolution_source,
                     )
                 )
 
-        # Check for discrepancies in callers
+        # Check for discrepancies in callers (same consensus logic)
         if a_callers != b_callers:
             only_in_a = a_callers - b_callers
             only_in_b = b_callers - a_callers
 
             for caller in only_in_a | only_in_b:
-                in_ground_truth = caller in gt_caller_ids
                 a_has = caller in a_callers
                 b_has = caller in b_callers
 
-                if in_ground_truth:
-                    resolution, confidence = (
-                        (ResolutionAction.ACCEPT_STREAM_A, 0.99)
-                        if a_has
-                        else (ResolutionAction.ACCEPT_STREAM_B, 0.99)
-                    )
+                in_ground_truth = caller in gt_caller_ids if gt_caller_ids else None
+
+                if in_ground_truth is not None:
+                    if in_ground_truth and a_has:
+                        resolution = ResolutionAction.ACCEPT_STREAM_A
+                        confidence = 0.7
+                        resolution_source = ResolutionSource.GROUND_TRUTH_HINT
+                    elif in_ground_truth and b_has:
+                        resolution = ResolutionAction.ACCEPT_STREAM_B
+                        confidence = 0.7
+                        resolution_source = ResolutionSource.GROUND_TRUTH_HINT
+                    else:
+                        resolution = ResolutionAction.NEEDS_HUMAN_REVIEW
+                        confidence = 0.5
+                        resolution_source = ResolutionSource.UNRESOLVED
                 else:
-                    resolution = ResolutionAction.ACCEPT_GROUND_TRUTH
-                    confidence = 0.99
+                    resolution = ResolutionAction.NEEDS_HUMAN_REVIEW
+                    confidence = 0.5
+                    resolution_source = ResolutionSource.UNRESOLVED
 
                 discrepancies.append(
                     Discrepancy(
@@ -641,6 +691,7 @@ class ConcreteComparatorAgent(ComparatorAgent):
                         ground_truth=in_ground_truth,
                         resolution=resolution,
                         confidence=confidence,
+                        resolution_source=resolution_source,
                     )
                 )
 
@@ -651,8 +702,8 @@ class ConcreteComparatorAgent(ComparatorAgent):
         component_id: str,
         stream_a_doc: dict,
         stream_b_doc: dict,
-        gt_callees: list,
-        gt_callers: list,
+        gt_callees: list | None = None,
+        gt_callers: list | None = None,
     ) -> list[Discrepancy]:
         """Use LLM to compare documentation semantically.
 
@@ -743,23 +794,35 @@ class ConcreteComparatorAgent(ComparatorAgent):
             self._metrics.record_error()
             return []
 
-    def _resolve_with_ground_truth(self, discrepancy: Discrepancy, ground_truth: CallGraph) -> None:
-        """Resolve a call graph discrepancy using ground truth.
+    def _suggest_resolution_from_hint(
+        self, discrepancy: Discrepancy, ground_truth: CallGraph | None
+    ) -> None:
+        """Suggest a resolution for a discrepancy using ground truth as a hint.
 
-        Modifies the discrepancy in place with resolution.
+        Note: This does NOT auto-resolve. It provides a suggestion with lower
+        confidence that still may require human review.
+
+        Modifies the discrepancy in place with suggested resolution.
 
         Args:
-            discrepancy: Discrepancy to resolve
-            ground_truth: Ground truth call graph
+            discrepancy: Discrepancy to suggest resolution for
+            ground_truth: Optional ground truth call graph (hint only)
         """
         if not discrepancy.is_call_graph_related:
+            return
+
+        if ground_truth is None:
+            # No hint available
+            discrepancy.resolution = ResolutionAction.NEEDS_HUMAN_REVIEW
+            discrepancy.confidence = 0.5
+            discrepancy.resolution_source = ResolutionSource.UNRESOLVED
             return
 
         gt_value = discrepancy.ground_truth
         a_value = discrepancy.stream_a_value
         b_value = discrepancy.stream_b_value
 
-        resolution, confidence = self._determine_resolution(
+        resolution, confidence, source = self._determine_resolution(
             discrepancy_type=discrepancy.type.value,
             stream_a_value=a_value,
             stream_b_value=b_value,
@@ -768,6 +831,7 @@ class ConcreteComparatorAgent(ComparatorAgent):
 
         discrepancy.resolution = self._map_resolution_action(resolution)
         discrepancy.confidence = confidence
+        discrepancy.resolution_source = self._map_resolution_source(source)
 
     def _get_stream_model(self, stream_output: StreamOutput) -> str:
         """Get model name from stream output.
@@ -839,11 +903,30 @@ class ConcreteComparatorAgent(ComparatorAgent):
             "accept_stream_a": ResolutionAction.ACCEPT_STREAM_A,
             "accept_stream_b": ResolutionAction.ACCEPT_STREAM_B,
             "accept_ground_truth": ResolutionAction.ACCEPT_GROUND_TRUTH,
+            "accept_consensus": ResolutionAction.ACCEPT_CONSENSUS,
             "merge_both": ResolutionAction.MERGE_BOTH,
             "needs_human_review": ResolutionAction.NEEDS_HUMAN_REVIEW,
             "deferred": ResolutionAction.DEFERRED,
         }
         return resolution_map.get(resolution_str.lower(), ResolutionAction.NEEDS_HUMAN_REVIEW)
+
+    def _map_resolution_source(self, source_str: str) -> ResolutionSource:
+        """Map string to ResolutionSource enum.
+
+        Args:
+            source_str: Resolution source string
+
+        Returns:
+            ResolutionSource enum value
+        """
+        source_map = {
+            "consensus": ResolutionSource.CONSENSUS,
+            "ground_truth_hint": ResolutionSource.GROUND_TRUTH_HINT,
+            "human_review": ResolutionSource.HUMAN_REVIEW,
+            "auto_resolved": ResolutionSource.AUTO_RESOLVED,
+            "unresolved": ResolutionSource.UNRESOLVED,
+        }
+        return source_map.get(source_str.lower(), ResolutionSource.UNRESOLVED)
 
 
 def create_comparator_agent(

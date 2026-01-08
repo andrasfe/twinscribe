@@ -16,6 +16,7 @@ from twinscribe.models.base import ModelTier, StreamId
 from twinscribe.models.call_graph import CallGraph
 from twinscribe.models.components import Component
 from twinscribe.models.documentation import DocumentationOutput
+from twinscribe.models.feedback import CallGraphFeedback
 
 
 class DocumenterInput(BaseModel):
@@ -29,6 +30,8 @@ class DocumenterInput(BaseModel):
         iteration: Current iteration number (for re-documentation)
         previous_output: Previous documentation if re-documenting
         corrections: Corrections to apply from validation
+        call_graph_feedback: Optional feedback about call graph discrepancies
+            from the other stream, to help convergence
     """
 
     component: Component = Field(..., description="Component to document")
@@ -53,6 +56,10 @@ class DocumenterInput(BaseModel):
     corrections: list[dict] = Field(
         default_factory=list,
         description="Corrections from validation to apply",
+    )
+    call_graph_feedback: list[CallGraphFeedback] = Field(
+        default_factory=list,
+        description="Feedback about call graph discrepancies from other stream",
     )
 
 
@@ -282,6 +289,25 @@ that don't exist in the code. Ensure descriptions are thorough and informative."
             )
             for correction in input_data.corrections:
                 lines.append(f"- {correction}")
+
+        # Add call graph feedback section if present
+        if input_data.call_graph_feedback:
+            lines.extend(
+                [
+                    "",
+                    "## Call Graph Feedback from Other Stream",
+                    "The following discrepancies were found between your call graph "
+                    "and the other documentation stream. Please verify and update:",
+                    "",
+                ]
+            )
+            for feedback in input_data.call_graph_feedback:
+                if feedback.has_feedback():
+                    lines.append(f"### Component: {feedback.component_id}")
+                    prompt_section = feedback.to_prompt_section()
+                    if prompt_section:
+                        lines.append(prompt_section)
+                    lines.append("")
 
         lines.extend(
             [

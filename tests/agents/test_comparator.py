@@ -998,63 +998,106 @@ class TestComparatorComponentComparison:
 
 
 class TestComparatorGroundTruthResolution:
-    """Tests for ground truth resolution logic."""
+    """Tests for consensus and hint-based resolution logic.
 
-    def test_determine_resolution_matches_stream_a(self, comparator_config: ComparatorConfig):
-        """Test resolution when Stream A matches ground truth."""
+    Note: Ground truth is now used as hints only, not authoritative.
+    Consensus (A == B) is the primary resolution mechanism.
+    """
+
+    def test_determine_resolution_consensus(self, comparator_config: ComparatorConfig):
+        """Test resolution when both streams agree (consensus)."""
         agent = MockComparatorAgent(comparator_config)
 
-        resolution, confidence = agent._determine_resolution(
+        resolution, confidence, source = agent._determine_resolution(
+            discrepancy_type="call_graph_edge",
+            stream_a_value="same_value",
+            stream_b_value="same_value",
+            ground_truth="different_hint",
+        )
+
+        # Consensus takes precedence over ground truth
+        assert resolution == "accept_consensus"
+        assert confidence == 0.99
+        assert source == "consensus"
+
+    def test_determine_resolution_hint_suggests_stream_a(self, comparator_config: ComparatorConfig):
+        """Test resolution when Stream A matches ground truth hint (no consensus)."""
+        agent = MockComparatorAgent(comparator_config)
+
+        resolution, confidence, source = agent._determine_resolution(
             discrepancy_type="call_graph_edge",
             stream_a_value="correct_callee",
             stream_b_value="wrong_callee",
             ground_truth="correct_callee",
         )
 
+        # Hint suggests Stream A, but with lower confidence (no consensus)
         assert resolution == "accept_stream_a"
-        assert confidence == 0.99
+        assert confidence == 0.7  # Lower than before - hint, not authority
+        assert source == "ground_truth_hint"
 
-    def test_determine_resolution_matches_stream_b(self, comparator_config: ComparatorConfig):
-        """Test resolution when Stream B matches ground truth."""
+    def test_determine_resolution_hint_suggests_stream_b(self, comparator_config: ComparatorConfig):
+        """Test resolution when Stream B matches ground truth hint (no consensus)."""
         agent = MockComparatorAgent(comparator_config)
 
-        resolution, confidence = agent._determine_resolution(
+        resolution, confidence, source = agent._determine_resolution(
             discrepancy_type="call_graph_edge",
             stream_a_value="wrong_callee",
             stream_b_value="correct_callee",
             ground_truth="correct_callee",
         )
 
+        # Hint suggests Stream B, but with lower confidence (no consensus)
         assert resolution == "accept_stream_b"
-        assert confidence == 0.99
+        assert confidence == 0.7  # Lower than before - hint, not authority
+        assert source == "ground_truth_hint"
 
-    def test_determine_resolution_neither_matches(self, comparator_config: ComparatorConfig):
-        """Test resolution when neither stream matches ground truth."""
+    def test_determine_resolution_neither_matches_hint(self, comparator_config: ComparatorConfig):
+        """Test resolution when neither stream matches ground truth hint."""
         agent = MockComparatorAgent(comparator_config)
 
-        resolution, confidence = agent._determine_resolution(
+        resolution, confidence, source = agent._determine_resolution(
             discrepancy_type="call_graph_edge",
             stream_a_value="wrong_a",
             stream_b_value="wrong_b",
             ground_truth="correct",
         )
 
-        assert resolution == "accept_ground_truth"
-        assert confidence == 0.99
+        # Neither matches hint - needs human review
+        assert resolution == "needs_human_review"
+        assert confidence == 0.5
+        assert source == "unresolved"
 
     def test_determine_resolution_content_needs_review(self, comparator_config: ComparatorConfig):
         """Test resolution for content discrepancy needs human review."""
         agent = MockComparatorAgent(comparator_config)
 
-        resolution, confidence = agent._determine_resolution(
+        resolution, confidence, source = agent._determine_resolution(
             discrepancy_type="documentation_content",
             stream_a_value="Summary version A",
             stream_b_value="Summary version B",
-            ground_truth=None,  # No ground truth for content
+            ground_truth=None,  # No ground truth hint for content
         )
 
         assert resolution == "needs_human_review"
         assert confidence == 0.5
+        assert source == "unresolved"
+
+    def test_determine_resolution_no_hint_available(self, comparator_config: ComparatorConfig):
+        """Test resolution when no ground truth hint is available."""
+        agent = MockComparatorAgent(comparator_config)
+
+        resolution, confidence, source = agent._determine_resolution(
+            discrepancy_type="call_graph_edge",
+            stream_a_value="value_a",
+            stream_b_value="value_b",
+            ground_truth=None,  # No hint
+        )
+
+        # No hint and no consensus - needs human review
+        assert resolution == "needs_human_review"
+        assert confidence == 0.5
+        assert source == "unresolved"
 
 
 class TestComparatorBeadsTicketGeneration:
@@ -1198,7 +1241,8 @@ class TestComparatorPromptBuilding:
         assert "sample_module.Calculator.add" in prompt
         assert "Stream A" in prompt
         assert "Stream B" in prompt
-        assert "Ground Truth" in prompt
+        assert "Static Analysis Hints" in prompt  # Renamed from Ground Truth
+        assert "not authoritative" in prompt  # Verify hint language
 
     def test_get_response_schema(self, comparator_config: ComparatorConfig):
         """Test that response schema is valid."""
@@ -1323,12 +1367,13 @@ class TestComparatorSystemPrompt:
     def test_system_prompt_content(self, comparator_config: ComparatorConfig):
         """Test that system prompt contains required instructions."""
         assert "arbitration" in MockComparatorAgent.SYSTEM_PROMPT.lower()
-        assert "ground truth" in MockComparatorAgent.SYSTEM_PROMPT.lower()
+        assert "consensus" in MockComparatorAgent.SYSTEM_PROMPT.lower()  # Now uses consensus
         assert "discrepan" in MockComparatorAgent.SYSTEM_PROMPT.lower()
 
-    def test_system_prompt_mentions_static_analysis(self, comparator_config: ComparatorConfig):
-        """Test that system prompt emphasizes static analysis authority."""
-        assert (
-            "static analysis" in MockComparatorAgent.SYSTEM_PROMPT.lower()
-            or "authoritative" in MockComparatorAgent.SYSTEM_PROMPT.lower()
-        )
+    def test_system_prompt_mentions_consensus_as_primary(self, comparator_config: ComparatorConfig):
+        """Test that system prompt emphasizes consensus as source of truth."""
+        prompt = MockComparatorAgent.SYSTEM_PROMPT.lower()
+        assert "consensus" in prompt
+        assert "source of truth" in prompt
+        # Static analysis is now hints, not authoritative
+        assert "hints" in prompt or "not authoritative" in prompt

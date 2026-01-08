@@ -6,10 +6,14 @@ analysis, as well as call graphs inferred by documentation agents.
 """
 
 from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, computed_field
 
 from twinscribe.models.base import CallType
+
+if TYPE_CHECKING:
+    from twinscribe.models.convergence import ConvergenceCriteria, ConvergenceStatus
 
 
 class CallEdge(BaseModel):
@@ -394,3 +398,128 @@ class StreamCallGraphComparison(BaseModel):
                     )
 
         return "\n".join(lines)
+
+    def check_convergence(
+        self,
+        criteria: "ConvergenceCriteria",
+        iteration: int = 1,
+    ) -> "ConvergenceStatus":
+        """Check convergence status against criteria.
+
+        Evaluates the current comparison results against convergence criteria
+        to determine if streams have achieved consensus.
+
+        Args:
+            criteria: Convergence criteria to check against
+            iteration: Current iteration number
+
+        Returns:
+            ConvergenceStatus with detailed convergence information
+        """
+        # Import here to avoid circular dependency
+        from twinscribe.models.convergence import ConvergenceStatus
+
+        # Get lists of converged and divergent components
+        converged_components: list[str] = []
+        divergent_components: list[str] = []
+
+        for comp_id, details in self.component_details.items():
+            if details["status"] == "identical":
+                converged_components.append(comp_id)
+            else:
+                divergent_components.append(comp_id)
+
+        # Check if agreement rate meets criteria
+        is_converged = criteria.is_agreement_sufficient(self.agreement_rate)
+
+        return ConvergenceStatus(
+            is_converged=is_converged,
+            agreement_rate=self.agreement_rate,
+            iteration=iteration,
+            converged_components=converged_components,
+            divergent_components=divergent_components,
+        )
+
+    def generate_feedback(self) -> tuple["StreamFeedback", "StreamFeedback"]:
+        """Generate feedback for both streams based on discrepancies.
+
+        Creates feedback objects that tell each stream about edges the other
+        stream found. This creates a feedback loop where both streams learn
+        from each other and can converge.
+
+        When A finds edge X->Y but B doesn't:
+        - Tell B: "Stream A found edge X->Y that you missed. Please verify."
+        - Tell A: "Stream B did not find edge X->Y. Please verify this is correct."
+
+        Returns:
+            Tuple of (feedback_for_stream_a, feedback_for_stream_b)
+        """
+        # Import here to avoid circular dependency
+        from twinscribe.models.feedback import CallGraphFeedback, StreamFeedback
+
+        feedback_a_items: list[CallGraphFeedback] = []
+        feedback_b_items: list[CallGraphFeedback] = []
+
+        # Process each component that has differences
+        for comp_id in self.only_in_a.keys() | self.only_in_b.keys():
+            edges_only_in_a = self.only_in_a.get(comp_id, set())
+            edges_only_in_b = self.only_in_b.get(comp_id, set())
+
+            # Feedback for Stream A: edges B found that A missed, and A's edges to verify
+            if edges_only_in_b or edges_only_in_a:
+                # Build message for Stream A
+                message_parts_a = []
+                if edges_only_in_b:
+                    edge_strs = [f"{c}->{e}" for c, e in edges_only_in_b]
+                    message_parts_a.append(
+                        f"Stream B found edges that you missed: {', '.join(edge_strs)}. "
+                        "Please verify and include if correct."
+                    )
+                if edges_only_in_a:
+                    edge_strs = [f"{c}->{e}" for c, e in edges_only_in_a]
+                    message_parts_a.append(
+                        f"Stream B did not find edges: {', '.join(edge_strs)}. "
+                        "Please verify these are correct."
+                    )
+
+                feedback_a_items.append(
+                    CallGraphFeedback(
+                        component_id=comp_id,
+                        edges_only_in_other_stream=list(edges_only_in_b),
+                        edges_to_verify=list(edges_only_in_a),
+                        other_stream_id="B",
+                        message=" ".join(message_parts_a),
+                    )
+                )
+
+            # Feedback for Stream B: edges A found that B missed, and B's edges to verify
+            if edges_only_in_a or edges_only_in_b:
+                # Build message for Stream B
+                message_parts_b = []
+                if edges_only_in_a:
+                    edge_strs = [f"{c}->{e}" for c, e in edges_only_in_a]
+                    message_parts_b.append(
+                        f"Stream A found edges that you missed: {', '.join(edge_strs)}. "
+                        "Please verify and include if correct."
+                    )
+                if edges_only_in_b:
+                    edge_strs = [f"{c}->{e}" for c, e in edges_only_in_b]
+                    message_parts_b.append(
+                        f"Stream A did not find edges: {', '.join(edge_strs)}. "
+                        "Please verify these are correct."
+                    )
+
+                feedback_b_items.append(
+                    CallGraphFeedback(
+                        component_id=comp_id,
+                        edges_only_in_other_stream=list(edges_only_in_a),
+                        edges_to_verify=list(edges_only_in_b),
+                        other_stream_id="A",
+                        message=" ".join(message_parts_b),
+                    )
+                )
+
+        feedback_for_a = StreamFeedback(stream_id="A", feedbacks=feedback_a_items)
+        feedback_for_b = StreamFeedback(stream_id="B", feedbacks=feedback_b_items)
+
+        return (feedback_for_a, feedback_for_b)

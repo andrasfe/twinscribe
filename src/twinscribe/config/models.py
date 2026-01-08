@@ -484,6 +484,7 @@ class StaticAnalysisConfig(BaseModel):
     """Configuration for static analysis.
 
     Attributes:
+        enabled: Whether static analysis is enabled (can be disabled for languages without analyzers)
         python: Python analyzer config
         java: Java analyzer config
         javascript: JavaScript analyzer config
@@ -492,6 +493,10 @@ class StaticAnalysisConfig(BaseModel):
         cache_ttl_hours: Cache time-to-live
     """
 
+    enabled: bool = Field(
+        default=True,
+        description="Enable static analysis (set to False for legacy languages without analyzers)",
+    )
     python: dict[str, AnalyzerToolConfig] = Field(
         default_factory=lambda: {
             "primary": AnalyzerToolConfig(enabled=True),

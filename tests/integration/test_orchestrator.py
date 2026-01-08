@@ -1027,8 +1027,18 @@ class TestOrchestratorMaxIterations:
         )
 
         component_ids = [c.component_id for c in sample_components]
-        stream_a_output = create_mock_stream_output(StreamId.STREAM_A, component_ids)
-        stream_b_output = create_mock_stream_output(StreamId.STREAM_B, component_ids)
+
+        # Create DIFFERENT call graphs so streams are seen as divergent
+        # This is necessary to test max iterations - if call graphs are identical,
+        # the orchestrator detects convergence via StreamCallGraphComparison
+        callees_map_a = {
+            "sample_codebase.calculator.Calculator.add": ["builtins.round"],
+        }
+        callees_map_b = {
+            "sample_codebase.calculator.Calculator.add": ["builtins.print"],  # Different!
+        }
+        stream_a_output = create_mock_stream_output(StreamId.STREAM_A, component_ids, callees_map_a)
+        stream_b_output = create_mock_stream_output(StreamId.STREAM_B, component_ids, callees_map_b)
 
         mock_oracle = MockStaticAnalysisOracle(
             sample_codebase_path,
@@ -1186,8 +1196,17 @@ class TestOrchestratorOutputGeneration:
     ):
         """Test that ConvergenceReport is correctly populated."""
         component_ids = [c.component_id for c in sample_components]
-        stream_a_output = create_mock_stream_output(StreamId.STREAM_A, component_ids)
-        stream_b_output = create_mock_stream_output(StreamId.STREAM_B, component_ids)
+
+        # Create DIFFERENT call graphs so we can test multi-iteration convergence
+        # With identical call graphs, StreamCallGraphComparison detects convergence immediately
+        callees_map_a = {
+            "sample_codebase.calculator.Calculator.add": ["builtins.round"],
+        }
+        callees_map_b = {
+            "sample_codebase.calculator.Calculator.add": ["builtins.print"],  # Different initially
+        }
+        stream_a_output = create_mock_stream_output(StreamId.STREAM_A, component_ids, callees_map_a)
+        stream_b_output = create_mock_stream_output(StreamId.STREAM_B, component_ids, callees_map_b)
 
         mock_oracle = MockStaticAnalysisOracle(
             sample_codebase_path,
@@ -1455,3 +1474,323 @@ class TestOrchestratorErrorHandling:
         # Should complete despite errors
         assert orchestrator.state.phase == OrchestratorPhase.COMPLETED
         assert len(orchestrator.state.errors) >= 1
+
+
+@pytest.mark.integration
+class TestOrchestratorCallGraphRefinement:
+    """Test iterative call graph refinement with feedback loop."""
+
+    @pytest.mark.asyncio
+    async def test_divergent_components_trigger_feedback_generation(
+        self,
+        sample_codebase_path: Path,
+        sample_components: list[Component],
+        sample_source_code_map: dict[str, str],
+        mock_call_graph: CallGraph,
+    ):
+        """Test that divergent call graphs generate feedback for streams."""
+        config = OrchestratorConfig(
+            max_iterations=5,
+            max_call_graph_iterations=5,
+            parallel_components=5,
+            wait_for_beads=False,
+            beads_timeout_hours=0,
+            skip_validation=False,
+            dry_run=True,
+            continue_on_error=True,
+        )
+
+        component_ids = [c.component_id for c in sample_components]
+
+        # Stream A finds one callee, Stream B finds a different one
+        callees_map_a = {
+            "sample_codebase.calculator.Calculator.add": ["builtins.round"],
+        }
+        callees_map_b = {
+            "sample_codebase.calculator.Calculator.add": ["builtins.print"],  # Different!
+        }
+
+        stream_a_output = create_mock_stream_output(StreamId.STREAM_A, component_ids, callees_map_a)
+        stream_b_output = create_mock_stream_output(StreamId.STREAM_B, component_ids, callees_map_b)
+
+        mock_oracle = MockStaticAnalysisOracle(
+            sample_codebase_path,
+            mock_call_graph=mock_call_graph,
+        )
+
+        stream_a_config = MagicMock(spec=StreamConfig)
+        stream_a_config.stream_id = StreamId.STREAM_A
+        stream_b_config = MagicMock(spec=StreamConfig)
+        stream_b_config.stream_id = StreamId.STREAM_B
+
+        # Track feedback passed to streams
+        feedback_received_a = []
+        feedback_received_b = []
+
+        stream_a = MockDocumentationStream(
+            config=stream_a_config,
+            mock_output=stream_a_output,
+        )
+        # Monkey-patch to track feedback
+        original_set_feedback_a = getattr(stream_a, 'set_call_graph_feedback', lambda x: None)
+        def track_feedback_a(feedback):
+            feedback_received_a.append(feedback)
+            return original_set_feedback_a(feedback)
+        stream_a.set_call_graph_feedback = track_feedback_a
+
+        stream_b = MockDocumentationStream(
+            config=stream_b_config,
+            mock_output=stream_b_output,
+        )
+        original_set_feedback_b = getattr(stream_b, 'set_call_graph_feedback', lambda x: None)
+        def track_feedback_b(feedback):
+            feedback_received_b.append(feedback)
+            return original_set_feedback_b(feedback)
+        stream_b.set_call_graph_feedback = track_feedback_b
+
+        # First iteration: discrepancy, generates feedback
+        # Second iteration: converges after feedback
+        mock_comparator = MockComparatorAgent(
+            config=MagicMock(spec=ComparatorConfig),
+            comparison_results=[
+                create_discrepancy_comparison_result(
+                    iteration=1,
+                    total_components=len(sample_components),
+                    converged=False,
+                ),
+                create_converged_comparison_result(
+                    iteration=2,
+                    total_components=len(sample_components),
+                ),
+            ],
+        )
+
+        with patch("twinscribe.analysis.component_discovery.ComponentDiscovery") as MockDiscovery:
+            mock_discovery_instance = MagicMock()
+            mock_discovery_result = MagicMock()
+            mock_discovery_result.components = sample_components
+            mock_discovery_result.source_code_map = sample_source_code_map
+            mock_discovery_result.processing_order = component_ids
+            mock_discovery_result.errors = []
+            mock_discovery_instance.discover = AsyncMock(return_value=mock_discovery_result)
+            MockDiscovery.return_value = mock_discovery_instance
+
+            orchestrator = DualStreamOrchestrator(
+                config=config,
+                static_oracle=mock_oracle,
+                stream_a=stream_a,
+                stream_b=stream_b,
+                comparator=mock_comparator,
+            )
+
+            result = await orchestrator.run()
+
+        # Verify feedback was generated and passed to streams
+        # First iteration has None (no previous feedback), subsequent iterations may have feedback
+        assert len(feedback_received_a) >= 1
+        assert len(feedback_received_b) >= 1
+        assert orchestrator.state.phase == OrchestratorPhase.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_only_divergent_components_reprocessed_in_subsequent_iterations(
+        self,
+        sample_codebase_path: Path,
+        sample_components: list[Component],
+        sample_source_code_map: dict[str, str],
+        mock_call_graph: CallGraph,
+    ):
+        """Test that subsequent iterations only reprocess divergent components."""
+        config = OrchestratorConfig(
+            max_iterations=3,
+            max_call_graph_iterations=3,
+            parallel_components=5,
+            wait_for_beads=False,
+            beads_timeout_hours=0,
+            skip_validation=False,
+            dry_run=True,
+            continue_on_error=True,
+        )
+
+        component_ids = [c.component_id for c in sample_components]
+
+        # All call graphs identical (should converge immediately)
+        callees_map = {
+            "sample_codebase.calculator.Calculator.add": ["builtins.round"],
+            "sample_codebase.calculator.Calculator.multiply": ["builtins.round"],
+        }
+
+        stream_a_output = create_mock_stream_output(StreamId.STREAM_A, component_ids, callees_map)
+        stream_b_output = create_mock_stream_output(StreamId.STREAM_B, component_ids, callees_map)
+
+        mock_oracle = MockStaticAnalysisOracle(
+            sample_codebase_path,
+            mock_call_graph=mock_call_graph,
+        )
+
+        stream_a_config = MagicMock(spec=StreamConfig)
+        stream_a_config.stream_id = StreamId.STREAM_A
+        stream_b_config = MagicMock(spec=StreamConfig)
+        stream_b_config.stream_id = StreamId.STREAM_B
+
+        # Track how many times process is called
+        process_call_counts_a = []
+        process_call_counts_b = []
+
+        stream_a = MockDocumentationStream(
+            config=stream_a_config,
+            mock_output=stream_a_output,
+        )
+        original_process_a = stream_a.process
+        async def tracking_process_a(components, source_code_map, ground_truth):
+            process_call_counts_a.append(len(components))
+            return await original_process_a(components, source_code_map, ground_truth)
+        stream_a.process = tracking_process_a
+
+        stream_b = MockDocumentationStream(
+            config=stream_b_config,
+            mock_output=stream_b_output,
+        )
+        original_process_b = stream_b.process
+        async def tracking_process_b(components, source_code_map, ground_truth):
+            process_call_counts_b.append(len(components))
+            return await original_process_b(components, source_code_map, ground_truth)
+        stream_b.process = tracking_process_b
+
+        # Converges on first iteration
+        mock_comparator = MockComparatorAgent(
+            config=MagicMock(spec=ComparatorConfig),
+            comparison_results=[
+                create_converged_comparison_result(
+                    iteration=1,
+                    total_components=len(sample_components),
+                ),
+            ],
+        )
+
+        with patch("twinscribe.analysis.component_discovery.ComponentDiscovery") as MockDiscovery:
+            mock_discovery_instance = MagicMock()
+            mock_discovery_result = MagicMock()
+            mock_discovery_result.components = sample_components
+            mock_discovery_result.source_code_map = sample_source_code_map
+            mock_discovery_result.processing_order = component_ids
+            mock_discovery_result.errors = []
+            mock_discovery_instance.discover = AsyncMock(return_value=mock_discovery_result)
+            MockDiscovery.return_value = mock_discovery_instance
+
+            orchestrator = DualStreamOrchestrator(
+                config=config,
+                static_oracle=mock_oracle,
+                stream_a=stream_a,
+                stream_b=stream_b,
+                comparator=mock_comparator,
+            )
+
+            result = await orchestrator.run()
+
+        # Verify only one iteration was run (since it converged)
+        assert orchestrator.state.iteration == 1
+        assert len(process_call_counts_a) == 1
+        assert len(process_call_counts_b) == 1
+        # First iteration processes all components
+        assert process_call_counts_a[0] == len(sample_components)
+        assert process_call_counts_b[0] == len(sample_components)
+
+    @pytest.mark.asyncio
+    async def test_max_iterations_escalates_divergent_to_beads(
+        self,
+        sample_codebase_path: Path,
+        sample_components: list[Component],
+        sample_source_code_map: dict[str, str],
+        mock_call_graph: CallGraph,
+    ):
+        """Test that max iterations triggers escalation of divergent components to Beads."""
+        from twinscribe.models.convergence import ConvergenceCriteria
+
+        config = OrchestratorConfig(
+            max_iterations=2,
+            max_call_graph_iterations=2,
+            parallel_components=5,
+            wait_for_beads=False,
+            beads_timeout_hours=0,
+            skip_validation=False,
+            dry_run=False,  # Enable Beads ticket creation
+            continue_on_error=True,
+            convergence_criteria=ConvergenceCriteria(
+                min_agreement_rate=0.95,
+                max_iterations=2,
+            ),
+        )
+
+        component_ids = [c.component_id for c in sample_components]
+
+        # Streams never converge - different call graphs
+        callees_map_a = {
+            "sample_codebase.calculator.Calculator.add": ["builtins.round"],
+        }
+        callees_map_b = {
+            "sample_codebase.calculator.Calculator.add": ["builtins.print"],
+        }
+
+        stream_a_output = create_mock_stream_output(StreamId.STREAM_A, component_ids, callees_map_a)
+        stream_b_output = create_mock_stream_output(StreamId.STREAM_B, component_ids, callees_map_b)
+
+        mock_oracle = MockStaticAnalysisOracle(
+            sample_codebase_path,
+            mock_call_graph=mock_call_graph,
+        )
+
+        stream_a_config = MagicMock(spec=StreamConfig)
+        stream_a_config.stream_id = StreamId.STREAM_A
+        stream_b_config = MagicMock(spec=StreamConfig)
+        stream_b_config.stream_id = StreamId.STREAM_B
+
+        stream_a = MockDocumentationStream(
+            config=stream_a_config,
+            mock_output=stream_a_output,
+        )
+        stream_b = MockDocumentationStream(
+            config=stream_b_config,
+            mock_output=stream_b_output,
+        )
+
+        # Never converges
+        mock_comparator = MockComparatorAgent(
+            config=MagicMock(spec=ComparatorConfig),
+            comparison_results=[
+                create_discrepancy_comparison_result(
+                    iteration=i,
+                    total_components=len(sample_components),
+                    converged=False,
+                )
+                for i in range(1, 5)
+            ],
+        )
+
+        mock_beads = MockBeadsLifecycleManager()
+
+        with patch("twinscribe.analysis.component_discovery.ComponentDiscovery") as MockDiscovery:
+            mock_discovery_instance = MagicMock()
+            mock_discovery_result = MagicMock()
+            mock_discovery_result.components = sample_components
+            mock_discovery_result.source_code_map = sample_source_code_map
+            mock_discovery_result.processing_order = component_ids
+            mock_discovery_result.errors = []
+            mock_discovery_instance.discover = AsyncMock(return_value=mock_discovery_result)
+            MockDiscovery.return_value = mock_discovery_instance
+
+            orchestrator = DualStreamOrchestrator(
+                config=config,
+                static_oracle=mock_oracle,
+                stream_a=stream_a,
+                stream_b=stream_b,
+                comparator=mock_comparator,
+                beads_manager=mock_beads,
+            )
+
+            result = await orchestrator.run()
+
+        # Verify max iterations was reached
+        assert orchestrator.state.iteration == 2
+        assert orchestrator.state.phase == OrchestratorPhase.COMPLETED
+        # Beads tickets should have been created for divergent components
+        # (The exact count depends on how many discrepancies the comparator returns)

@@ -42,6 +42,8 @@ from twinscribe.models.convergence import (
     ConvergenceCriteria,
     ConvergenceHistoryEntry,
     ConvergenceReport,
+    ConvergenceResult,
+    ConvergenceStatus as CallGraphConvergenceStatus,
 )
 from twinscribe.models.documentation import (
     CalleeRef,
@@ -49,6 +51,10 @@ from twinscribe.models.documentation import (
     CallGraphSection,
     DocumentationOutput,
     DocumenterMetadata,
+)
+from twinscribe.models.feedback import (
+    CallGraphFeedback,
+    StreamFeedback,
 )
 from twinscribe.models.output import (
     ComponentFinalDoc,
@@ -88,6 +94,9 @@ __all__ = [
     "CalleeRef",
     "CallerRef",
     "CallGraphSection",
+    # Feedback models
+    "CallGraphFeedback",
+    "StreamFeedback",
     # Validation models
     "CompletenessCheck",
     "CallGraphAccuracy",
@@ -104,6 +113,8 @@ __all__ = [
     "ConvergenceCriteria",
     "ConvergenceHistoryEntry",
     "ConvergenceReport",
+    "ConvergenceResult",
+    "CallGraphConvergenceStatus",
     # Output models
     "ComponentFinalDoc",
     "DocumentationPackage",

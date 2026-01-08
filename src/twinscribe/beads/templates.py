@@ -86,6 +86,46 @@ class RebuildTemplateData:
     epic_key: str | None = None
 
 
+@dataclass
+class DivergentComponentTemplateData:
+    """Data for rendering a divergent component ticket.
+
+    Created when streams don't converge after max_iterations and
+    require human review to resolve call graph discrepancies.
+
+    Attributes:
+        component_id: Unique component identifier
+        component_name: Human-readable component name
+        component_type: Type of component (function, class, method)
+        file_path: Path to the file containing the component
+        stream_a_edges: Call graph edges from Stream A
+        stream_b_edges: Call graph edges from Stream B
+        edges_only_in_a: Edges present only in Stream A
+        edges_only_in_b: Edges present only in Stream B
+        common_edges: Edges present in both streams
+        iteration_history: Summary of convergence attempts per iteration
+        total_iterations: Number of iterations attempted
+        final_agreement_rate: Agreement rate at final iteration
+        labels: Labels to apply to the ticket
+        priority: Ticket priority (default High for divergent components)
+    """
+
+    component_id: str
+    component_name: str
+    component_type: str
+    file_path: str
+    stream_a_edges: list[tuple[str, str]]  # (caller, callee) tuples
+    stream_b_edges: list[tuple[str, str]]
+    edges_only_in_a: list[tuple[str, str]]
+    edges_only_in_b: list[tuple[str, str]]
+    common_edges: list[tuple[str, str]]
+    iteration_history: list[dict[str, float | int]] = field(default_factory=list)
+    total_iterations: int = 0
+    final_agreement_rate: float = 0.0
+    labels: list[str] = field(default_factory=list)
+    priority: str = "High"
+
+
 class TicketTemplate(BaseModel):
     """A ticket template definition.
 
@@ -156,6 +196,73 @@ RESOLUTION: <accept_a|accept_b|merge|manual>
 """.strip(),
     default_labels=["ai-documentation", "discrepancy"],
     default_priority="Medium",
+)
+
+
+# Default divergent component ticket template
+DEFAULT_DIVERGENT_COMPONENT_TEMPLATE = TicketTemplate(
+    name="default_divergent_component",
+    template_type=TemplateType.DISCREPANCY,
+    summary_template="[Divergent Call Graph] ${component_name}: Streams failed to converge",
+    description_template="""
+## Divergent Component - Human Review Required
+
+**Component:** ${component_name}
+**Type:** ${component_type}
+**File:** `${file_path}`
+**Component ID:** `${component_id}`
+
+## Convergence Summary
+
+**Total Iterations:** ${total_iterations}
+**Final Agreement Rate:** ${final_agreement_rate}%
+
+The dual-stream documentation process could not reach consensus on the call graph
+for this component after ${total_iterations} iterations. Human review is required
+to determine the correct call relationships.
+
+## Stream A - Call Graph Edges
+
+${stream_a_edges_section}
+
+## Stream B - Call Graph Edges
+
+${stream_b_edges_section}
+
+## Discrepancy Analysis
+
+### Edges Only in Stream A (not found by Stream B)
+${edges_only_in_a_section}
+
+### Edges Only in Stream B (not found by Stream A)
+${edges_only_in_b_section}
+
+### Common Edges (agreed by both streams)
+${common_edges_section}
+
+## Iteration History
+
+${iteration_history_section}
+
+## Resolution Required
+
+Please review the call graph discrepancies and determine the correct edges:
+
+1. **Accept Stream A**: Stream A's call graph is correct
+2. **Accept Stream B**: Stream B's call graph is correct
+3. **Merge**: Combine edges from both streams as appropriate
+4. **Manual Override**: Provide the correct call graph
+
+Add a comment with your resolution in the format:
+```
+RESOLUTION: <accept_a|accept_b|merge|manual>
+EDGES:
+- caller1 -> callee1
+- caller2 -> callee2
+```
+""".strip(),
+    default_labels=["ai-documentation", "divergent-call-graph", "human-review"],
+    default_priority="High",
 )
 
 
@@ -237,6 +344,7 @@ class TicketTemplateEngine:
         self._templates: dict[str, TicketTemplate] = {
             "default_discrepancy": DEFAULT_DISCREPANCY_TEMPLATE,
             "default_rebuild": DEFAULT_REBUILD_TEMPLATE,
+            "default_divergent_component": DEFAULT_DIVERGENT_COMPONENT_TEMPLATE,
         }
 
     def register_template(self, template: TicketTemplate) -> None:
@@ -389,9 +497,79 @@ class TicketTemplateEngine:
 
         return summary, description
 
+    def render_divergent_component(
+        self,
+        data: DivergentComponentTemplateData,
+        template_name: str = "default_divergent_component",
+    ) -> tuple[str, str]:
+        """Render a divergent component ticket.
+
+        Called when streams fail to converge on call graph after max iterations.
+
+        Args:
+            data: Template data for divergent component
+            template_name: Name of template to use
+
+        Returns:
+            Tuple of (summary, description)
+
+        Raises:
+            ValueError: If template not found
+        """
+        template = self._templates.get(template_name)
+        if not template:
+            raise ValueError(f"Template not found: {template_name}")
+
+        # Helper function to format edge list
+        def format_edges(edges: list[tuple[str, str]]) -> str:
+            if not edges:
+                return "* None"
+            return "\n".join(f"* `{caller}` -> `{callee}`" for caller, callee in edges)
+
+        # Build substitution variables
+        variables = {
+            "component_id": data.component_id,
+            "component_name": data.component_name,
+            "component_type": data.component_type,
+            "file_path": data.file_path,
+            "total_iterations": str(data.total_iterations),
+            "final_agreement_rate": f"{data.final_agreement_rate * 100:.1f}",
+        }
+
+        # Format edge sections
+        variables["stream_a_edges_section"] = format_edges(data.stream_a_edges)
+        variables["stream_b_edges_section"] = format_edges(data.stream_b_edges)
+        variables["edges_only_in_a_section"] = format_edges(data.edges_only_in_a)
+        variables["edges_only_in_b_section"] = format_edges(data.edges_only_in_b)
+        variables["common_edges_section"] = format_edges(data.common_edges)
+
+        # Format iteration history
+        if data.iteration_history:
+            history_lines = []
+            for entry in data.iteration_history:
+                iteration = entry.get("iteration", "?")
+                rate = entry.get("agreement_rate", 0)
+                divergent = entry.get("divergent_count", 0)
+                history_lines.append(
+                    f"| {iteration} | {rate * 100:.1f}% | {divergent} |"
+                )
+            variables["iteration_history_section"] = (
+                "| Iteration | Agreement Rate | Divergent Components |\n"
+                "| --- | --- | --- |\n"
+                + "\n".join(history_lines)
+            )
+        else:
+            variables["iteration_history_section"] = "No iteration history available."
+
+        # Render templates
+        summary = Template(template.summary_template).safe_substitute(variables)
+        description = Template(template.description_template).safe_substitute(variables)
+
+        return summary, description
+
     def get_labels(
         self,
-        data: DiscrepancyTemplateData | RebuildTemplateData,
+        data: DiscrepancyTemplateData | RebuildTemplateData | DivergentComponentTemplateData,
         template_name: str,
     ) -> list[str]:
         """Get labels for a ticket.
@@ -423,7 +601,7 @@ class TicketTemplateEngine:
 
     def get_priority(
         self,
-        data: DiscrepancyTemplateData | RebuildTemplateData,
+        data: DiscrepancyTemplateData | RebuildTemplateData | DivergentComponentTemplateData,
         template_name: str,
     ) -> str:
         """Get priority for a ticket.

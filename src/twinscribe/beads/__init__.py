@@ -46,6 +46,7 @@ from twinscribe.beads.manager import (
 )
 from twinscribe.beads.templates import (
     DiscrepancyTemplateData,
+    DivergentComponentTemplateData,
     RebuildTemplateData,
     TicketTemplateEngine,
 )
@@ -83,5 +84,6 @@ __all__ = [
     # Templates
     "TicketTemplateEngine",
     "DiscrepancyTemplateData",
+    "DivergentComponentTemplateData",
     "RebuildTemplateData",
 ]

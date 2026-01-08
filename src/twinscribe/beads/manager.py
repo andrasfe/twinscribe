@@ -25,6 +25,7 @@ from twinscribe.beads.client import (
 )
 from twinscribe.beads.templates import (
     DiscrepancyTemplateData,
+    DivergentComponentTemplateData,
     RebuildTemplateData,
     ResolutionParser,
     TicketTemplateEngine,
@@ -323,6 +324,77 @@ class BeadsLifecycleManager:
                 "rebuild_priority": data.rebuild_priority,
                 "complexity_score": data.complexity_score,
                 "file_path": data.file_path,
+            },
+        )
+
+        return tracked
+
+    async def create_divergent_component_ticket(
+        self,
+        data: DivergentComponentTemplateData,
+        template_name: str = "default_divergent_component",
+    ) -> TrackedTicket:
+        """Create a ticket for a divergent component.
+
+        Called when streams fail to converge on call graphs after max iterations.
+        The ticket includes both stream outputs and iteration history for human review.
+
+        Args:
+            data: Template data for the divergent component
+            template_name: Template to use for rendering
+
+        Returns:
+            Tracked ticket
+
+        Raises:
+            BeadsError: If ticket creation fails
+        """
+        # Render ticket content
+        summary, description = self._template_engine.render_divergent_component(
+            data, template_name
+        )
+
+        # Get labels and priority
+        labels = self._template_engine.get_labels(data, template_name)
+        labels.extend(self._config.default_labels)
+        priority = self._template_engine.get_priority(data, template_name)
+
+        # Create the ticket
+        request = CreateIssueRequest(
+            project=self._config.project,
+            issue_type="Task",
+            summary=summary,
+            description=description,
+            priority=priority,
+            labels=list(set(labels)),
+            custom_fields={
+                "component_id": data.component_id,
+                "component_name": data.component_name,
+                "total_iterations": data.total_iterations,
+                "final_agreement_rate": data.final_agreement_rate,
+                "discrepancy_type": "call_graph_divergence",
+            },
+        )
+
+        issue = await self._client.create_issue(request)
+
+        # Calculate timeout
+        timeout_at = datetime.utcnow() + timedelta(hours=self._config.timeout_hours)
+
+        # Track the ticket
+        tracked = self._tracker.track(
+            ticket_key=issue.key,
+            ticket_type=TicketType.DISCREPANCY,
+            discrepancy_id=f"divergent_{data.component_id}",
+            component_id=data.component_id,
+            timeout_at=timeout_at,
+            metadata={
+                "total_iterations": data.total_iterations,
+                "final_agreement_rate": data.final_agreement_rate,
+                "file_path": data.file_path,
+                "edges_only_in_a": len(data.edges_only_in_a),
+                "edges_only_in_b": len(data.edges_only_in_b),
+                "common_edges": len(data.common_edges),
             },
         )
 

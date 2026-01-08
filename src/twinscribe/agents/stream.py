@@ -46,6 +46,7 @@ from twinscribe.models.documentation import (
     DocumenterMetadata,
     StreamOutput,
 )
+from twinscribe.models.feedback import CallGraphFeedback, StreamFeedback
 from twinscribe.models.validation import (
     CallGraphAccuracy,
     CompletenessCheck,
@@ -493,6 +494,8 @@ class ConcreteDocumentationStream(DocumentationStream):
         self._component_map: dict[str, Component] = {}
         self._current_iteration: int = 1
         self._logger = logging.getLogger(f"{__name__}.{config.stream_id.value}")
+        # Call graph feedback from other stream for inter-stream convergence
+        self._call_graph_feedback: StreamFeedback | None = None
 
     async def initialize(self) -> None:
         """Initialize the stream and its agents.
@@ -565,10 +568,20 @@ class ConcreteDocumentationStream(DocumentationStream):
         self._logger.info(f"Starting to process {len(components)} components")
 
         # Store references for reprocessing
-        self._source_code_map = source_code_map
+        # Note: We merge rather than replace to support iterative refinement
+        # where we re-process only divergent components
+        self._source_code_map.update(source_code_map)
         self._ground_truth = ground_truth
-        self._component_map = {c.component_id: c for c in components}
-        self._processing_context = {}
+        # Merge new components into existing map (don't lose previously processed)
+        for c in components:
+            self._component_map[c.component_id] = c
+        # Preserve processing context from previous iterations for dependency resolution
+        # Only clear entries for components we're about to re-process
+        components_to_process_ids = {c.component_id for c in components}
+        self._processing_context = {
+            k: v for k, v in self._processing_context.items()
+            if k not in components_to_process_ids
+        }
 
         # Initialize result
         result = StreamResult(
@@ -759,6 +772,9 @@ class ConcreteDocumentationStream(DocumentationStream):
                 # Step 1: Generate documentation
                 self._logger.debug(f"Documenting component {component_id} (attempt {retries + 1})")
 
+                # Get any call graph feedback for this component from the other stream
+                call_graph_feedback = self.get_feedback_for_component(component_id)
+
                 documenter_input = DocumenterInput(
                     component=component,
                     source_code=source_code,
@@ -766,6 +782,7 @@ class ConcreteDocumentationStream(DocumentationStream):
                     static_analysis_hints=ground_truth,
                     iteration=retries + 1,
                     previous_output=result.documentation,
+                    call_graph_feedback=call_graph_feedback,
                 )
 
                 documentation = await self._documenter.process(documenter_input)
@@ -954,6 +971,9 @@ class ConcreteDocumentationStream(DocumentationStream):
         # Get previous documentation if available
         previous_output = self._output.get_output(component_id)
 
+        # Get any call graph feedback for this component from the other stream
+        call_graph_feedback = self.get_feedback_for_component(component_id)
+
         # Create documenter input with corrections
         documenter_input = DocumenterInput(
             component=component,
@@ -963,6 +983,7 @@ class ConcreteDocumentationStream(DocumentationStream):
             iteration=2,  # Mark as reprocessing
             previous_output=previous_output,
             corrections=corrections,
+            call_graph_feedback=call_graph_feedback,
         )
 
         # Process through documenter
@@ -1051,6 +1072,41 @@ class ConcreteDocumentationStream(DocumentationStream):
         """Get the checkpoint manager if set."""
         return self._checkpoint_manager
 
+    def set_call_graph_feedback(self, feedback: StreamFeedback | None) -> None:
+        """Set call graph feedback from the other stream.
+
+        This feedback contains information about edges that the other stream
+        found but this stream missed, and edges this stream found that the
+        other did not. It's used to help streams converge.
+
+        Args:
+            feedback: StreamFeedback containing per-component feedback,
+                or None to clear feedback
+        """
+        self._call_graph_feedback = feedback
+        if feedback:
+            self._logger.info(
+                f"Set call graph feedback: {feedback.component_count} components "
+                f"with {feedback.total_edges_to_verify} edges to verify"
+            )
+
+    def get_feedback_for_component(self, component_id: str) -> list[CallGraphFeedback]:
+        """Get call graph feedback for a specific component.
+
+        Args:
+            component_id: The component to get feedback for
+
+        Returns:
+            List of CallGraphFeedback items for this component (usually 0 or 1)
+        """
+        if not self._call_graph_feedback:
+            return []
+
+        feedback = self._call_graph_feedback.get_feedback_for_component(component_id)
+        if feedback and feedback.has_feedback():
+            return [feedback]
+        return []
+
     def _build_dependency_context(
         self,
         component: Component,
@@ -1059,7 +1115,8 @@ class ConcreteDocumentationStream(DocumentationStream):
         """Build dependency context from already processed components.
 
         Gets documentation for components that this component calls,
-        which have already been processed.
+        which have already been processed. This supports iterative refinement
+        by checking both in-memory context and persisted outputs.
 
         Args:
             component: The component being processed
@@ -1075,9 +1132,12 @@ class ConcreteDocumentationStream(DocumentationStream):
 
         for edge in callees:
             callee_id = edge.callee
-            # Check if we've already documented this component
+            # Check processing context first (in-memory from current iteration)
             if callee_id in self._processing_context:
                 context[callee_id] = self._processing_context[callee_id]
+            # Fall back to persisted outputs from previous iterations
+            elif callee_id in self._output.outputs:
+                context[callee_id] = self._output.outputs[callee_id]
 
         return context
 

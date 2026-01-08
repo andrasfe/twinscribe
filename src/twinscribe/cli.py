@@ -101,6 +101,11 @@ def main(ctx: click.Context, verbose: bool) -> None:
     default=None,
     help="Resume a specific run by its ID (use with --resume)",
 )
+@click.option(
+    "--no-static-analysis",
+    is_flag=True,
+    help="Skip static analysis (for languages without analyzers like COBOL/JCL)",
+)
 @click.pass_context
 def document(
     ctx: click.Context,
@@ -115,6 +120,7 @@ def document(
     delay: float,
     resume: bool,
     resume_run_id: str | None,
+    no_static_analysis: bool,
 ) -> None:
     """Generate documentation for a codebase.
 
@@ -141,6 +147,8 @@ def document(
     config_table.add_row("Language", language)
     config_table.add_row("Output", output)
     config_table.add_row("Max Iterations", str(max_iterations))
+    if no_static_analysis:
+        config_table.add_row("Static Analysis", "[yellow]Disabled[/yellow]")
     if dry_run:
         config_table.add_row("Mode", "[yellow]Dry Run[/yellow]")
     if resume:
@@ -171,6 +179,7 @@ def document(
                 verbose=verbose,
                 delay=delay,
                 checkpoint_state=checkpoint_state,
+                skip_static_analysis=no_static_analysis,
             )
         )
 
@@ -295,6 +304,7 @@ async def _run_document_pipeline(
     verbose: bool,
     delay: float,
     checkpoint_state: "CheckpointState | None" = None,
+    skip_static_analysis: bool = False,
 ) -> dict | None:
     """Run the documentation pipeline asynchronously.
 
@@ -309,6 +319,7 @@ async def _run_document_pipeline(
         verbose: Whether to show verbose output
         delay: Delay between API calls
         checkpoint_state: Optional checkpoint state for resuming
+        skip_static_analysis: Whether to skip static analysis entirely
 
     Returns:
         Dictionary with documentation results and metrics
@@ -382,40 +393,62 @@ async def _run_document_pipeline(
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    # Initialize static analysis oracle
-    console.print("[dim]Initializing static analysis...[/dim]")
+    # Determine if static analysis should be skipped
+    # CLI flag takes precedence, then config setting
+    static_analysis_enabled = cfg.static_analysis.enabled and not skip_static_analysis
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        transient=True,
-        console=console,
-    ) as progress:
-        task = progress.add_task("Analyzing codebase...", total=None)
+    # Initialize static analysis oracle (or null oracle if skipped)
+    if static_analysis_enabled:
+        console.print("[dim]Initializing static analysis...[/dim]")
 
-        oracle = OracleFactory.for_python(
-            codebase_path=codebase_path,
-            cache_enabled=cfg.static_analysis.cache_enabled,
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True,
+            console=console,
+        ) as progress:
+            task = progress.add_task("Analyzing codebase...", total=None)
+
+            try:
+                oracle = OracleFactory.for_python(
+                    codebase_path=codebase_path,
+                    cache_enabled=cfg.static_analysis.cache_enabled,
+                )
+                await oracle.initialize()
+                progress.update(task, description="Static analysis complete")
+            except Exception as e:
+                # Static analysis failure is non-fatal - log warning and use null oracle
+                progress.update(task, description="Static analysis failed")
+                console.print(
+                    f"[yellow]Warning:[/yellow] Static analysis failed: {e}"
+                )
+                console.print(
+                    "[dim]Continuing with dual-stream consensus as sole source of truth.[/dim]"
+                )
+                from twinscribe.analysis.null_oracle import create_null_oracle
+                oracle = create_null_oracle(codebase_path)
+                await oracle.initialize()
+
+        # Display call graph summary
+        if oracle.call_graph and oracle.call_graph.edge_count > 0:
+            console.print(
+                f"[green]Call graph extracted:[/green] "
+                f"{oracle.call_graph.edge_count} edges, "
+                f"{oracle.call_graph.node_count} nodes"
+            )
+    else:
+        # Static analysis disabled - use null oracle
+        console.print(
+            "[yellow]Static analysis disabled.[/yellow] "
+            "Dual-stream consensus will be the sole source of truth."
         )
+        from twinscribe.analysis.null_oracle import create_null_oracle
+        oracle = create_null_oracle(codebase_path)
         await oracle.initialize()
 
-        progress.update(task, description="Static analysis complete")
-
-    # Display call graph summary
-    if oracle.call_graph:
-        console.print(
-            f"[green]Call graph extracted:[/green] "
-            f"{oracle.call_graph.edge_count} edges, "
-            f"{oracle.call_graph.node_count} nodes"
-        )
-
-    # For now, we will run static analysis and save the call graph
-    # The full orchestrator pipeline requires additional stream implementations
-    # that may not be fully available yet
-
-    # Save call graph output
+    # Save call graph output (only if we have edges from static analysis)
     call_graph_path = output_path / cfg.output.call_graph_file
-    if oracle.call_graph:
+    if oracle.call_graph and oracle.call_graph.edge_count > 0:
         call_graph_data = oracle.call_graph.model_dump(mode="json")
         with open(call_graph_path, "w") as f:
             json.dump(call_graph_data, f, indent=2)

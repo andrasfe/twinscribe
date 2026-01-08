@@ -24,7 +24,7 @@ class ComparatorInput(BaseModel):
     Attributes:
         stream_a_output: Validated output from Stream A
         stream_b_output: Validated output from Stream B
-        ground_truth_call_graph: Static analysis call graph (authoritative)
+        ground_truth_call_graph: Optional static analysis call graph (used as hints, not authority)
         iteration: Current iteration number
         previous_comparison: Previous comparison result if re-comparing
         resolved_discrepancies: Discrepancies resolved since last comparison
@@ -32,8 +32,9 @@ class ComparatorInput(BaseModel):
 
     stream_a_output: StreamOutput = Field(..., description="Stream A validated output")
     stream_b_output: StreamOutput = Field(..., description="Stream B validated output")
-    ground_truth_call_graph: CallGraph = Field(
-        ..., description="Static analysis call graph (ground truth)"
+    ground_truth_call_graph: CallGraph | None = Field(
+        default=None,
+        description="Static analysis call graph (optional hints, not authoritative)",
     )
     iteration: int = Field(
         default=1,
@@ -107,13 +108,13 @@ class ComparatorAgent(BaseAgent[ComparatorInput, ComparisonResult]):
     """Abstract base class for the comparator agent.
 
     The comparator agent compares outputs from both documentation streams,
-    identifies discrepancies, consults ground truth, and generates Beads
-    tickets for issues requiring human review.
+    identifies discrepancies using dual-stream consensus as the source of truth,
+    and generates Beads tickets for issues requiring human review.
 
     The agent receives:
     - Validated output from Stream A
     - Validated output from Stream B
-    - Static analysis call graph (ground truth)
+    - Optional static analysis call graph (hints, not authoritative)
     - Previous iteration context
 
     The agent produces:
@@ -123,10 +124,14 @@ class ComparatorAgent(BaseAgent[ComparatorInput, ComparisonResult]):
     - Beads ticket references
 
     Decision Logic:
-    1. If stream_a == stream_b: ACCEPT (identical)
-    2. If discrepancy is call_graph_related: consult ground truth, accept matching
+    1. If stream_a == stream_b: ACCEPT (consensus - this is the source of truth)
+    2. If stream_a != stream_b: Mark as discrepancy requiring resolution
     3. If discrepancy is documentation_content and one is clearly better: accept better
     4. Otherwise: generate Beads ticket for human review
+
+    Note: Static analysis is used as optional hints to help LLMs produce better
+    documentation, but it does NOT auto-resolve discrepancies. Consensus (A == B)
+    is the authoritative resolution mechanism.
 
     Reference: Spec section 3.3
     """
@@ -138,22 +143,26 @@ from two independent streams and resolving discrepancies.
 YOUR RESPONSIBILITIES:
 1. Compare outputs component-by-component
 2. Identify all discrepancies (structural and semantic)
-3. For call graph discrepancies: consult static analysis (ground truth)
+3. Use CONSENSUS as the primary resolution mechanism (when both streams agree)
 4. For documentation content discrepancies: use judgment or escalate
 5. Generate Beads tickets for issues requiring human review
 6. Track convergence progress
 
 DECISION HIERARCHY:
-1. Static analysis is AUTHORITATIVE for call graph accuracy
-2. For semantic/content differences, prefer completeness and accuracy
-3. When uncertain (confidence < 0.7), generate Beads ticket
-4. Never guess - escalate unclear cases
+1. CONSENSUS is PRIMARY: If Stream A == Stream B, accept the agreed value
+2. If streams disagree and static analysis hints are available, use them as guidance (not authority)
+3. For semantic/content differences, prefer completeness and accuracy
+4. When uncertain (confidence < 0.7), generate Beads ticket
+5. Never guess - escalate unclear cases
 
 You have access to:
 - Stream A validated output
 - Stream B validated output
-- Static analysis call graph (GROUND TRUTH)
+- Static analysis call graph (optional hints, not authoritative)
 - Component source code (for context)
+
+IMPORTANT: The dual-stream consensus (A == B agreement) is the source of truth.
+Static analysis provides helpful hints but should not override stream consensus.
 
 Output comparison results in the specified JSON schema.
 Be thorough - missing a discrepancy is worse than flagging a false positive."""
@@ -206,7 +215,7 @@ Be thorough - missing a discrepancy is worse than flagging a false positive."""
         self,
         stream_a_output: StreamOutput,
         stream_b_output: StreamOutput,
-        ground_truth_call_graph: CallGraph,
+        ground_truth_call_graph: CallGraph | None = None,
         iteration: int = 1,
     ) -> ComparisonResult:
         """Compare outputs from both streams.
@@ -217,7 +226,7 @@ Be thorough - missing a discrepancy is worse than flagging a false positive."""
         Args:
             stream_a_output: Validated output from Stream A
             stream_b_output: Validated output from Stream B
-            ground_truth_call_graph: Static analysis call graph (authoritative)
+            ground_truth_call_graph: Optional static analysis call graph (hints, not authoritative)
             iteration: Current iteration number (default 1)
 
         Returns:
@@ -235,7 +244,7 @@ Be thorough - missing a discrepancy is worse than flagging a false positive."""
         component_id: str,
         stream_a_doc: dict | None,
         stream_b_doc: dict | None,
-        ground_truth: CallGraph,
+        ground_truth: CallGraph | None = None,
     ) -> list[Discrepancy]:
         """Compare documentation for a single component.
 
@@ -243,7 +252,7 @@ Be thorough - missing a discrepancy is worse than flagging a false positive."""
             component_id: Component being compared
             stream_a_doc: Documentation from Stream A (or None if missing)
             stream_b_doc: Documentation from Stream B (or None if missing)
-            ground_truth: Static analysis call graph
+            ground_truth: Optional static analysis call graph (hints only)
 
         Returns:
             List of discrepancies found for this component
@@ -276,8 +285,8 @@ Be thorough - missing a discrepancy is worse than flagging a false positive."""
         component_id: str,
         stream_a_doc: dict,
         stream_b_doc: dict,
-        gt_callees: list,
-        gt_callers: list,
+        gt_callees: list | None = None,
+        gt_callers: list | None = None,
     ) -> str:
         """Build prompt for comparing a single component.
 
@@ -285,8 +294,8 @@ Be thorough - missing a discrepancy is worse than flagging a false positive."""
             component_id: Component ID
             stream_a_doc: Stream A documentation
             stream_b_doc: Stream B documentation
-            gt_callees: Ground truth callees
-            gt_callers: Ground truth callers
+            gt_callees: Optional ground truth callees (hints only)
+            gt_callers: Optional ground truth callers (hints only)
 
         Returns:
             Formatted comparison prompt
@@ -303,27 +312,36 @@ Be thorough - missing a discrepancy is worse than flagging a false positive."""
             "```json",
             str(stream_b_doc),
             "```",
-            "",
-            "### Ground Truth (Static Analysis)",
-            "**Callees:**",
         ]
 
-        for edge in gt_callees:
-            lines.append(f"- {edge.callee}")
-        if not gt_callees:
-            lines.append("_None_")
+        # Only include ground truth section if hints are available
+        if gt_callees is not None or gt_callers is not None:
+            lines.extend(
+                [
+                    "",
+                    "### Static Analysis Hints (for reference only, not authoritative)",
+                    "**Callees:**",
+                ]
+            )
 
-        lines.extend(
-            [
-                "",
-                "**Callers:**",
-            ]
-        )
+            if gt_callees:
+                for edge in gt_callees:
+                    lines.append(f"- {edge.callee}")
+            else:
+                lines.append("_None_")
 
-        for edge in gt_callers:
-            lines.append(f"- {edge.caller}")
-        if not gt_callers:
-            lines.append("_None_")
+            lines.extend(
+                [
+                    "",
+                    "**Callers:**",
+                ]
+            )
+
+            if gt_callers:
+                for edge in gt_callers:
+                    lines.append(f"- {edge.caller}")
+            else:
+                lines.append("_None_")
 
         lines.extend(
             [
@@ -333,8 +351,12 @@ Be thorough - missing a discrepancy is worse than flagging a false positive."""
                 "2. Compare parameter documentation",
                 "3. Compare return documentation",
                 "4. Compare exception documentation",
-                "5. Compare call graph against ground truth",
-                "6. For each discrepancy, determine resolution or escalate to Beads",
+                "5. Compare call graphs between streams (consensus = agreement)",
+                "6. If streams agree, mark as resolved by consensus",
+                "7. If streams disagree, mark as discrepancy requiring resolution",
+                "",
+                "IMPORTANT: Dual-stream consensus (A == B) is the source of truth.",
+                "Static analysis hints can inform but do NOT auto-resolve discrepancies.",
                 "",
                 "Output discrepancies in the specified JSON format.",
             ]
@@ -347,31 +369,40 @@ Be thorough - missing a discrepancy is worse than flagging a false positive."""
         discrepancy_type: str,
         stream_a_value: any,
         stream_b_value: any,
-        ground_truth: any,
-    ) -> tuple[str, float]:
+        ground_truth: any = None,
+    ) -> tuple[str, float, str]:
         """Determine resolution for a discrepancy.
+
+        Uses consensus (A == B agreement) as the primary resolution mechanism.
+        Ground truth is only used as a hint when streams disagree.
 
         Args:
             discrepancy_type: Type of discrepancy
             stream_a_value: Value from Stream A
             stream_b_value: Value from Stream B
-            ground_truth: Ground truth value (if applicable)
+            ground_truth: Optional ground truth value (hint only)
 
         Returns:
-            Tuple of (resolution_action, confidence)
+            Tuple of (resolution_action, confidence, resolution_source)
         """
-        # Call graph discrepancies: use ground truth
-        if discrepancy_type.startswith("call_graph"):
-            if ground_truth is not None:
-                if stream_a_value == ground_truth:
-                    return ("accept_stream_a", 0.99)
-                elif stream_b_value == ground_truth:
-                    return ("accept_stream_b", 0.99)
-                else:
-                    return ("accept_ground_truth", 0.99)
+        # Primary resolution: Consensus (A == B)
+        if stream_a_value == stream_b_value:
+            return ("accept_consensus", 0.99, "consensus")
 
-        # Documentation content: need judgment
-        return ("needs_human_review", 0.5)
+        # Streams disagree - this is a discrepancy requiring resolution
+        # Ground truth can provide hints but does NOT auto-resolve
+        if ground_truth is not None:
+            # Ground truth is available as a hint
+            # We note which stream agrees with the hint, but still mark as needing review
+            if stream_a_value == ground_truth:
+                # Stream A matches hint - suggest A but lower confidence since no consensus
+                return ("accept_stream_a", 0.7, "ground_truth_hint")
+            elif stream_b_value == ground_truth:
+                # Stream B matches hint - suggest B but lower confidence
+                return ("accept_stream_b", 0.7, "ground_truth_hint")
+
+        # No consensus and no clear hint match - needs human review
+        return ("needs_human_review", 0.5, "unresolved")
 
     def _get_response_schema(self) -> dict:
         """Get the JSON schema for comparison output.

@@ -22,7 +22,13 @@ from typing import TYPE_CHECKING, Any, Optional
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
+    from twinscribe.models.call_graph import StreamCallGraphComparison
+    from twinscribe.models.convergence import ConvergenceResult, ConvergenceStatus
+    from twinscribe.models.documentation import DocumentationOutput
+    from twinscribe.models.feedback import StreamFeedback
     from twinscribe.orchestrator.checkpoint import CheckpointManager, CheckpointState
+
+from twinscribe.models.convergence import ConvergenceCriteria
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +51,8 @@ class OrchestratorConfig(BaseModel):
     """Configuration for the DualStreamOrchestrator.
 
     Attributes:
-        max_iterations: Maximum documentation iterations
+        max_iterations: Maximum documentation iterations (legacy, use convergence_criteria)
+        max_call_graph_iterations: Maximum iterations for call graph convergence
         parallel_components: Number of components to process in parallel
         parallel_streams: Run both streams in parallel (may hit rate limits)
         rate_limit_delay: Delay in seconds between component processing (0 = no delay)
@@ -55,9 +62,16 @@ class OrchestratorConfig(BaseModel):
         skip_validation: Skip validation step (for testing)
         dry_run: Don't create Beads tickets or write output
         continue_on_error: Continue processing if individual components fail
+        convergence_criteria: Criteria for determining dual-stream convergence
     """
 
     max_iterations: int = Field(default=5, ge=1, le=20)
+    max_call_graph_iterations: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        description="Maximum iterations for call graph convergence before escalating to Beads",
+    )
     parallel_components: int = Field(default=10, ge=1, le=100)
     parallel_streams: bool = Field(default=False, description="Run streams in parallel")
     rate_limit_delay: float = Field(default=0.5, ge=0, description="Delay between API calls in seconds")
@@ -76,6 +90,10 @@ class OrchestratorConfig(BaseModel):
     skip_validation: bool = Field(default=False)
     dry_run: bool = Field(default=False)
     continue_on_error: bool = Field(default=False, description="Continue if component fails (fail-fast by default)")
+    convergence_criteria: "ConvergenceCriteria" = Field(
+        default_factory=lambda: ConvergenceCriteria(),
+        description="Criteria for determining when dual-stream consensus is achieved",
+    )
 
 
 @dataclass
@@ -206,6 +224,18 @@ class DualStreamOrchestrator:
         self._processing_order: list[str] = []
         self._component_results: dict[str, ComponentFinalDoc] = {}
         self._source_code_map: dict[str, str] = {}  # component_id -> source code
+
+        # Call graph feedback for inter-stream communication
+        # These are populated after call graph comparison and passed to streams
+        # on the next iteration to help them converge
+        self._feedback_for_stream_a: "StreamFeedback | None" = None
+        self._feedback_for_stream_b: "StreamFeedback | None" = None
+
+        # Convergence tracking for call graphs
+        # Tracks agreement rates per iteration for reporting
+        self._convergence_history: list[float] = []
+        self._latest_convergence_status: "ConvergenceStatus | None" = None
+        self._latest_call_graph_comparison: "StreamCallGraphComparison | None" = None
 
     @property
     def config(self) -> OrchestratorConfig:
@@ -457,20 +487,28 @@ class DualStreamOrchestrator:
     def _build_processing_order(self) -> list[str]:
         """Build topological processing order.
 
-        Dependencies are processed before dependents.
+        Dependencies are processed before dependents. When static analysis
+        is disabled (empty call graph), falls back to alphabetical order.
 
         Returns:
             List of component IDs in processing order
         """
-        # Get call graph from oracle
+        # Get call graph from oracle (may be empty if static analysis disabled)
         call_graph = self._oracle.call_graph
+
+        component_ids = {c.component_id for c in self._components}
+
+        # If no call graph or empty, use alphabetical order
+        if call_graph is None or call_graph.edge_count == 0:
+            logger.info(
+                "No call graph available for topological ordering, using alphabetical order"
+            )
+            return sorted(component_ids)
 
         # Build dependency graph (reverse of call graph for processing order)
         # A depends on B if A calls B, so B should be processed first
         in_degree: dict[str, int] = {}
         adjacency: dict[str, list[str]] = {}
-
-        component_ids = {c.component_id for c in self._components}
 
         for comp_id in component_ids:
             in_degree[comp_id] = 0
@@ -549,6 +587,42 @@ class DualStreamOrchestrator:
         components_to_process = self._get_components_to_process()
         self._state.processed_components = 0
 
+        # If no components to process (all converged), return early with success
+        if not components_to_process and iteration > 1:
+            logger.info(f"Iteration {iteration}: all components converged, skipping documentation")
+            # Return a converged result
+            return IterationResult(
+                iteration=iteration,
+                components_processed=0,
+                discrepancies_found=0,
+                discrepancies_resolved=0,
+                beads_tickets_created=0,
+                converged=True,
+                metrics={
+                    "identical_components": self._state.total_components,
+                    "call_graph_match_rate": 1.0,
+                    "documentation_similarity": 1.0,
+                    "resolved_by_consensus": 0,
+                    "resolved_by_hint": 0,
+                    "converged_components": self._state.total_components,
+                    "divergent_components": 0,
+                    "divergent_tickets_created": 0,
+                },
+            )
+
+        # Set iteration number on streams for proper tracking
+        if hasattr(self._stream_a, "set_iteration"):
+            self._stream_a.set_iteration(iteration)
+        if hasattr(self._stream_b, "set_iteration"):
+            self._stream_b.set_iteration(iteration)
+
+        # Pass any feedback from previous iteration to streams
+        # This helps streams converge by informing them about edges the other found
+        if hasattr(self._stream_a, "set_call_graph_feedback"):
+            self._stream_a.set_call_graph_feedback(self._feedback_for_stream_a)
+        if hasattr(self._stream_b, "set_call_graph_feedback"):
+            self._stream_b.set_call_graph_feedback(self._feedback_for_stream_b)
+
         if self._config.parallel_streams:
             # Parallel execution (may hit rate limits)
             output_a, output_b = await asyncio.gather(
@@ -589,11 +663,52 @@ class DualStreamOrchestrator:
 
         logger.info(call_graph_validation.get_summary())
 
+        # Store comparison for later use in convergence checking and Beads ticket creation
+        self._latest_call_graph_comparison = call_graph_validation
+
+        # Check convergence status using criteria
+        convergence_status = call_graph_validation.check_convergence(
+            criteria=self._config.convergence_criteria,
+            iteration=iteration,
+        )
+        self._latest_convergence_status = convergence_status
+        self._convergence_history.append(convergence_status.agreement_rate)
+
+        logger.info(
+            f"Convergence check: is_converged={convergence_status.is_converged}, "
+            f"agreement_rate={convergence_status.agreement_rate:.1%}, "
+            f"converged_components={len(convergence_status.converged_components)}, "
+            f"divergent_components={len(convergence_status.divergent_components)}"
+        )
+
         if not call_graph_validation.is_consistent:
             logger.warning(
                 f"Call graph discrepancies detected: {call_graph_validation.differing_components} "
                 f"components differ ({call_graph_validation.agreement_rate:.1%} agreement)"
             )
+
+            # Check if we should continue iterating or escalate to Beads
+            if convergence_status.should_continue_iterating(self._config.convergence_criteria):
+                # Generate feedback for both streams to help them converge
+                self._feedback_for_stream_a, self._feedback_for_stream_b = (
+                    call_graph_validation.generate_feedback()
+                )
+                logger.info(
+                    f"Generated feedback: {self._feedback_for_stream_a.component_count} components "
+                    f"for Stream A, {self._feedback_for_stream_b.component_count} components for Stream B"
+                )
+            else:
+                # Max iterations reached - escalate divergent components to Beads
+                logger.warning(
+                    f"Max iterations ({self._config.convergence_criteria.max_iterations}) reached. "
+                    f"Escalating {len(convergence_status.divergent_components)} divergent components to Beads."
+                )
+                self._feedback_for_stream_a = None
+                self._feedback_for_stream_b = None
+        else:
+            # Clear feedback if streams are consistent
+            self._feedback_for_stream_a = None
+            self._feedback_for_stream_b = None
 
         # Step 2: Comparison
         self._state.phase = OrchestratorPhase.COMPARING
@@ -601,49 +716,87 @@ class DualStreamOrchestrator:
 
         # Extract StreamOutput from StreamResult for comparator
         # (stream.process() returns StreamResult which wraps StreamOutput)
+        # Note: Call graph is passed as optional hints, not authoritative ground truth
+        # The dual-stream consensus (A == B agreement) is the source of truth
+        call_graph_hints = self._oracle.call_graph if self._oracle.is_initialized else None
         comparison = await self._comparator.compare(
             output_a.output,
             output_b.output,
-            self._oracle.call_graph,
+            call_graph_hints,  # Optional hints, not authority
         )
 
         # Step 3: Resolution
+        # Note: Ground truth no longer auto-resolves - consensus (A == B) is the authority
+        # Discrepancies are either resolved by consensus or require human review
         self._state.phase = OrchestratorPhase.RESOLVING
         self._notify_progress()
 
-        resolved_by_ground_truth = 0
+        resolved_by_consensus = 0
+        resolved_by_hint = 0
         beads_tickets_created = 0
 
         for discrepancy in comparison.discrepancies:
-            if discrepancy.is_call_graph_related and discrepancy.ground_truth is not None:
-                # Apply ground truth resolution
-                await self._apply_ground_truth_resolution(discrepancy)
-                resolved_by_ground_truth += 1
+            # Track resolution source
+            from twinscribe.models.base import ResolutionSource
 
-            elif discrepancy.requires_beads and self._beads_manager:
-                # Create Beads ticket
+            if discrepancy.resolution_source == ResolutionSource.CONSENSUS:
+                # Already resolved by stream consensus - no action needed
+                resolved_by_consensus += 1
+                continue
+
+            if discrepancy.resolution_source == ResolutionSource.GROUND_TRUTH_HINT:
+                # Hint-based suggestion - may still need human review if low confidence
+                resolved_by_hint += 1
+                if discrepancy.confidence >= self._comparator.comparator_config.confidence_threshold:
+                    # High enough confidence to apply hint-based resolution
+                    await self._apply_hint_based_resolution(discrepancy)
+                    continue
+
+            # Discrepancy requires human review via Beads
+            if discrepancy.requires_beads and self._beads_manager:
                 if not self._config.dry_run:
                     await self._create_beads_ticket(discrepancy)
                     beads_tickets_created += 1
+
+        # Step 3.5: Create Beads tickets for divergent components if max iterations reached
+        divergent_tickets_created = 0
+        if (
+            convergence_status.iteration >= self._config.convergence_criteria.max_iterations
+            and convergence_status.divergent_components
+            and self._beads_manager
+            and not self._config.dry_run
+        ):
+            divergent_tickets_created = await self._create_divergent_component_tickets(
+                divergent_components=convergence_status.divergent_components,
+                call_graph_comparison=call_graph_validation,
+                output_a=output_a.output.outputs,
+                output_b=output_b.output.outputs,
+            )
+            beads_tickets_created += divergent_tickets_created
 
         # Wait for Beads resolution if configured
         if beads_tickets_created > 0 and self._config.wait_for_beads and self._beads_manager:
             await self._wait_for_beads_resolution()
 
-        # Step 4: Check convergence
-        converged = self._check_convergence(comparison)
+        # Step 4: Check convergence (use the convergence status we already computed)
+        converged = convergence_status.is_converged or self._check_convergence(comparison)
 
         return IterationResult(
             iteration=iteration,
             components_processed=len(components_to_process),
             discrepancies_found=len(comparison.discrepancies),
-            discrepancies_resolved=resolved_by_ground_truth,
+            discrepancies_resolved=resolved_by_consensus + resolved_by_hint,
             beads_tickets_created=beads_tickets_created,
             converged=converged,
             metrics={
                 "identical_components": comparison.summary.identical,
-                "call_graph_match_rate": comparison.summary.agreement_rate,
+                "call_graph_match_rate": convergence_status.agreement_rate,
                 "documentation_similarity": comparison.summary.agreement_rate,
+                "resolved_by_consensus": resolved_by_consensus,
+                "resolved_by_hint": resolved_by_hint,
+                "converged_components": len(convergence_status.converged_components),
+                "divergent_components": len(convergence_status.divergent_components),
+                "divergent_tickets_created": divergent_tickets_created,
             },
         )
 
@@ -651,7 +804,14 @@ class DualStreamOrchestrator:
         """Get components to process in this iteration.
 
         First iteration: all components (filtered), minus already-processed if resuming
-        Subsequent iterations: only components with discrepancies
+        Subsequent iterations: only divergent components that need refinement
+
+        The iterative refinement loop works as follows:
+        1. First iteration: process all components
+        2. Compare call graphs between streams
+        3. For divergent components, generate feedback for each stream
+        4. Subsequent iterations: re-process ONLY divergent components with feedback
+        5. Continue until convergence or max iterations reached
 
         Returns:
             List of components to process
@@ -683,9 +843,32 @@ class DualStreamOrchestrator:
         if self._state.iteration == 1:
             return filtered
 
-        # Get components with unresolved discrepancies
-        # This would check the comparison results from previous iteration
-        # For now, return filtered components (optimization for later)
+        # Subsequent iterations: only re-process divergent components
+        # These are components where Stream A and Stream B produced different call graphs
+        if self._latest_convergence_status is not None:
+            divergent_ids = set(self._latest_convergence_status.divergent_components)
+            if divergent_ids:
+                divergent_components = [
+                    c for c in filtered
+                    if c.component_id in divergent_ids
+                ]
+                logger.info(
+                    f"Iteration {self._state.iteration}: re-processing "
+                    f"{len(divergent_components)} divergent components (out of {len(filtered)} total)"
+                )
+                return divergent_components
+            else:
+                # No divergent components - all converged
+                logger.info(
+                    f"Iteration {self._state.iteration}: no divergent components to re-process"
+                )
+                return []
+
+        # Fallback: if no convergence status available, process all
+        logger.warning(
+            f"Iteration {self._state.iteration}: no convergence status available, "
+            "processing all components"
+        )
         return filtered
 
     def _should_exclude_component(self, component_id: str) -> bool:
@@ -702,14 +885,18 @@ class DualStreamOrchestrator:
                 return True
         return False
 
-    async def _apply_ground_truth_resolution(
+    async def _apply_hint_based_resolution(
         self,
         discrepancy: "Discrepancy",
     ) -> None:
-        """Apply a ground truth resolution to streams.
+        """Apply a hint-based resolution to streams.
+
+        This is used when ground truth provides a suggestion and confidence
+        is high enough to apply without human review. Note that this is
+        NOT authoritative - the resolution is a suggestion based on hints.
 
         Args:
-            discrepancy: Discrepancy to resolve
+            discrepancy: Discrepancy to resolve based on hint
         """
         from twinscribe.models.base import ResolutionAction
 
@@ -728,18 +915,8 @@ class DualStreamOrchestrator:
                 field,
                 discrepancy.stream_b_value,
             )
-        elif discrepancy.resolution == ResolutionAction.ACCEPT_GROUND_TRUTH:
-            # Apply ground truth to both streams
-            await self._stream_a.apply_correction(
-                discrepancy.component_id,
-                field,
-                discrepancy.ground_truth,
-            )
-            await self._stream_b.apply_correction(
-                discrepancy.component_id,
-                field,
-                discrepancy.ground_truth,
-            )
+        # Note: ACCEPT_GROUND_TRUTH is no longer used as ground truth is not authoritative
+        # If both streams disagree with hint, it goes to human review
 
     async def _create_beads_ticket(self, discrepancy: "Discrepancy") -> str:
         """Create a Beads ticket for a discrepancy.
@@ -777,6 +954,138 @@ class DualStreamOrchestrator:
 
         tracked = await self._beads_manager.create_discrepancy_ticket(data)
         return tracked.ticket_key
+
+    async def _create_divergent_component_tickets(
+        self,
+        divergent_components: list[str],
+        call_graph_comparison: "StreamCallGraphComparison",
+        output_a: dict[str, "DocumentationOutput"],
+        output_b: dict[str, "DocumentationOutput"],
+    ) -> int:
+        """Create Beads tickets for divergent components.
+
+        Called when streams fail to converge on call graphs after max iterations.
+        Creates detailed tickets for human review with both stream outputs and
+        iteration history.
+
+        Args:
+            divergent_components: List of component IDs that didn't converge
+            call_graph_comparison: The call graph comparison results
+            output_a: Documentation outputs from Stream A
+            output_b: Documentation outputs from Stream B
+
+        Returns:
+            Number of tickets created
+        """
+        from twinscribe.beads import DivergentComponentTemplateData
+
+        tickets_created = 0
+
+        for comp_id in divergent_components:
+            # Look up component info
+            component = next(
+                (c for c in self._components if c.component_id == comp_id),
+                None,
+            )
+            component_type = component.type.value if component else "unknown"
+            file_path = component.location.file_path if component else ""
+
+            # Get edges from both streams
+            doc_a = output_a.get(comp_id)
+            doc_b = output_b.get(comp_id)
+
+            stream_a_edges: list[tuple[str, str]] = []
+            stream_b_edges: list[tuple[str, str]] = []
+
+            if doc_a:
+                for callee in doc_a.call_graph.callees:
+                    stream_a_edges.append((comp_id, callee.component_id))
+                for caller in doc_a.call_graph.callers:
+                    stream_a_edges.append((caller.component_id, comp_id))
+
+            if doc_b:
+                for callee in doc_b.call_graph.callees:
+                    stream_b_edges.append((comp_id, callee.component_id))
+                for caller in doc_b.call_graph.callers:
+                    stream_b_edges.append((caller.component_id, comp_id))
+
+            # Compute edge differences
+            set_a = set(stream_a_edges)
+            set_b = set(stream_b_edges)
+            edges_only_in_a = list(set_a - set_b)
+            edges_only_in_b = list(set_b - set_a)
+            common_edges = list(set_a & set_b)
+
+            # Build iteration history
+            iteration_history: list[dict[str, float | int]] = []
+            for i, rate in enumerate(self._convergence_history, start=1):
+                iteration_history.append({
+                    "iteration": i,
+                    "agreement_rate": rate,
+                    "divergent_count": (
+                        len(self._latest_convergence_status.divergent_components)
+                        if self._latest_convergence_status
+                        else 0
+                    ),
+                })
+
+            # Create template data
+            data = DivergentComponentTemplateData(
+                component_id=comp_id,
+                component_name=comp_id.split(".")[-1] if "." in comp_id else comp_id,
+                component_type=component_type,
+                file_path=file_path,
+                stream_a_edges=stream_a_edges,
+                stream_b_edges=stream_b_edges,
+                edges_only_in_a=edges_only_in_a,
+                edges_only_in_b=edges_only_in_b,
+                common_edges=common_edges,
+                iteration_history=iteration_history,
+                total_iterations=self._state.iteration,
+                final_agreement_rate=(
+                    self._latest_convergence_status.agreement_rate
+                    if self._latest_convergence_status
+                    else 0.0
+                ),
+                labels=["divergent-call-graph", "human-review"],
+                priority="High",
+            )
+
+            # Create ticket via Beads manager
+            try:
+                tracked = await self._beads_manager.create_divergent_component_ticket(data)
+                tickets_created += 1
+                logger.info(
+                    f"Created divergent component ticket for {comp_id}: {tracked.ticket_key}"
+                )
+            except AttributeError:
+                # Fallback if create_divergent_component_ticket doesn't exist
+                # Create as a discrepancy ticket instead
+                from twinscribe.beads import DiscrepancyTemplateData
+
+                fallback_data = DiscrepancyTemplateData(
+                    discrepancy_id=f"divergent_{comp_id}",
+                    component_name=comp_id,
+                    component_type=component_type,
+                    file_path=file_path,
+                    discrepancy_type="call_graph_divergence",
+                    stream_a_value=str(stream_a_edges),
+                    stream_b_value=str(stream_b_edges),
+                    context=(
+                        f"Streams failed to converge after {self._state.iteration} iterations. "
+                        f"Only in A: {edges_only_in_a}, Only in B: {edges_only_in_b}"
+                    ),
+                    iteration=self._state.iteration,
+                    priority="High",
+                )
+                tracked = await self._beads_manager.create_discrepancy_ticket(fallback_data)
+                tickets_created += 1
+                logger.info(
+                    f"Created fallback discrepancy ticket for divergent component {comp_id}: "
+                    f"{tracked.ticket_key}"
+                )
+
+        return tickets_created
 
     async def _wait_for_beads_resolution(self) -> None:
         """Wait for Beads tickets to be resolved."""
