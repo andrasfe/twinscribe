@@ -579,6 +579,22 @@ class DualStreamOrchestrator:
         self._state.processed_components = len(components_to_process)
         self._notify_progress()
 
+        # Step 1.5: Validate call graph consistency between streams (before comparator)
+        from twinscribe.models.call_graph import StreamCallGraphComparison
+
+        call_graph_validation = StreamCallGraphComparison.compare_streams(
+            stream_a_outputs=output_a.output.outputs,
+            stream_b_outputs=output_b.output.outputs,
+        )
+
+        logger.info(call_graph_validation.get_summary())
+
+        if not call_graph_validation.is_consistent:
+            logger.warning(
+                f"Call graph discrepancies detected: {call_graph_validation.differing_components} "
+                f"components differ ({call_graph_validation.agreement_rate:.1%} agreement)"
+            )
+
         # Step 2: Comparison
         self._state.phase = OrchestratorPhase.COMPARING
         self._notify_progress()
