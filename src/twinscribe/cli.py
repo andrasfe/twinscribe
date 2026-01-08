@@ -153,7 +153,7 @@ def document(
     # Handle resume logic
     checkpoint_state = None
     if resume:
-        checkpoint_state = _handle_resume(output, resume_run_id, verbose)
+        checkpoint_state = _handle_resume(output, codebase_path, resume_run_id, verbose)
         if checkpoint_state is None and not resume_run_id:
             # No resumable runs found, continue with fresh run
             console.print("[dim]No incomplete runs found, starting fresh.[/dim]")
@@ -191,6 +191,7 @@ def document(
 
 def _handle_resume(
     output_dir: str,
+    codebase_path: str,
     resume_run_id: str | None,
     verbose: bool,
 ) -> "CheckpointState | None":
@@ -198,6 +199,7 @@ def _handle_resume(
 
     Args:
         output_dir: Output directory containing checkpoints
+        codebase_path: Path to the codebase being documented
         resume_run_id: Optional specific run ID to resume
         verbose: Whether to show verbose output
 
@@ -208,8 +210,10 @@ def _handle_resume(
 
     checkpoint_dir = Path(output_dir) / "checkpoints"
 
-    # Find resumable runs
-    resumable_runs = CheckpointManager.find_resumable_runs(checkpoint_dir)
+    # Find resumable runs for this specific codebase
+    resumable_runs = CheckpointManager.find_resumable_runs(
+        checkpoint_dir, codebase_path=codebase_path
+    )
 
     if not resumable_runs:
         if resume_run_id:

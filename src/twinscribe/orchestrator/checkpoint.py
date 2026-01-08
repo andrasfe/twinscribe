@@ -678,6 +678,7 @@ class CheckpointManager:
     def find_resumable_runs(
         cls,
         checkpoint_dir: str | Path,
+        codebase_path: str | Path | None = None,
     ) -> list[dict[str, Any]]:
         """Find incomplete runs that can be resumed.
 
@@ -686,6 +687,7 @@ class CheckpointManager:
 
         Args:
             checkpoint_dir: Directory containing checkpoint files
+            codebase_path: If provided, only return runs for this codebase
 
         Returns:
             List of resumable run info dicts with keys:
@@ -781,8 +783,24 @@ class CheckpointManager:
                 logger.warning(f"Failed to read checkpoint file {checkpoint_file}: {e}")
                 continue
 
-        # Sort by last event time (most recent first)
-        resumable.sort(key=lambda r: r.get("last_event_at", ""), reverse=True)
+        # Filter by codebase_path if provided
+        if codebase_path is not None:
+            target_path = Path(codebase_path).resolve()
+            filtered = []
+            for run in resumable:
+                run_codebase = run.get("config", {}).get("codebase_path", "")
+                if run_codebase:
+                    run_path = Path(run_codebase).resolve()
+                    if run_path == target_path:
+                        filtered.append(run)
+            resumable = filtered
+
+        # Sort by components processed (most progress first), then by time
+        # This ensures runs with actual work are preferred over empty/new runs
+        resumable.sort(
+            key=lambda r: (r.get("components_processed", 0), r.get("last_event_at", "")),
+            reverse=True,
+        )
 
         return resumable
 
