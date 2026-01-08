@@ -1261,6 +1261,24 @@ class ConcreteDocumenterAgent(DocumenterAgent):
         import json
         import re
 
+        def normalize_score(score: float | int | None, default: float = 0.8) -> float:
+            """Normalize LLM score to 0-1 range.
+
+            LLMs sometimes return scores on 0-10 scale instead of 0-1.
+            This normalizes and clamps to valid range.
+            """
+            if score is None:
+                return default
+            try:
+                score = float(score)
+            except (ValueError, TypeError):
+                return default
+            # If score > 1, assume it's on 0-10 scale
+            if score > 1.0:
+                score = score / 10.0
+            # Clamp to valid range
+            return max(0.0, min(1.0, score))
+
         # Strip markdown code fences if present (models sometimes wrap JSON in ```json ... ```)
         content = content.strip()
         if content.startswith("```"):
@@ -1404,7 +1422,7 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             agent_id=self._config.agent_id,
             stream_id=self._config.stream_id,
             model=self._config.model_name,
-            confidence=data.get("confidence", 0.8),
+            confidence=normalize_score(data.get("confidence"), default=0.8),
             token_count=token_count,
         )
 
@@ -1560,6 +1578,24 @@ class ConcreteValidatorAgent(ValidatorAgent):
         import json
         import re
 
+        def normalize_score(score: float | int | None, default: float = 1.0) -> float:
+            """Normalize LLM score to 0-1 range.
+
+            LLMs sometimes return scores on 0-10 scale instead of 0-1.
+            This normalizes and clamps to valid range.
+            """
+            if score is None:
+                return default
+            try:
+                score = float(score)
+            except (ValueError, TypeError):
+                return default
+            # If score > 1, assume it's on 0-10 scale
+            if score > 1.0:
+                score = score / 10.0
+            # Clamp to valid range
+            return max(0.0, min(1.0, score))
+
         # Strip markdown code fences if present (models sometimes wrap JSON in ```json ... ```)
         content = content.strip()
         if content.startswith("```"):
@@ -1603,16 +1639,20 @@ class ConcreteValidatorAgent(ValidatorAgent):
 
         # Parse completeness check
         comp_data = data.get("completeness", {})
+        if not isinstance(comp_data, dict):
+            comp_data = {}
         completeness = CompletenessCheck(
-            score=comp_data.get("score", 1.0),
+            score=normalize_score(comp_data.get("score")),
             missing_elements=comp_data.get("missing_elements", []),
             extra_elements=comp_data.get("extra_elements", []),
         )
 
         # Parse call graph accuracy
         cg_data = data.get("call_graph_accuracy", {})
+        if not isinstance(cg_data, dict):
+            cg_data = {}
         call_graph_accuracy = CallGraphAccuracy(
-            score=cg_data.get("score", 1.0),
+            score=normalize_score(cg_data.get("score")),
             verified_callees=cg_data.get("verified_callees", []),
             missing_callees=cg_data.get("missing_callees", []),
             false_callees=cg_data.get("false_callees", []),
@@ -1623,8 +1663,10 @@ class ConcreteValidatorAgent(ValidatorAgent):
 
         # Parse description quality
         dq_data = data.get("description_quality", {})
+        if not isinstance(dq_data, dict):
+            dq_data = {}
         description_quality = DescriptionQuality(
-            score=dq_data.get("score", 1.0),
+            score=normalize_score(dq_data.get("score")),
             issues=dq_data.get("issues", []),
         )
 
