@@ -1207,8 +1207,14 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             # Return minimal valid output
             return self._create_fallback_output(component_id, token_count)
 
-        # Handle case where model returns a list instead of dict
-        if isinstance(data, list):
+        # Handle case where model returns wrong type
+        if isinstance(data, str):
+            # Model returned a string - use it as description
+            self._logger.warning(
+                f"Model returned string instead of dict for {component_id}, using as description"
+            )
+            data = {"description": data}
+        elif isinstance(data, list):
             # Use first element if it's a dict, otherwise create fallback
             if data and isinstance(data[0], dict):
                 self._logger.warning(
