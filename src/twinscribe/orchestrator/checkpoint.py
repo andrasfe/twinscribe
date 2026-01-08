@@ -719,14 +719,17 @@ class CheckpointManager:
                 if not events:
                     continue
 
-                # Check if run completed
-                has_run_complete = any(
-                    e.get("type") == "run_complete" for e in events
+                # Check if run completed successfully (failed runs are resumable)
+                run_complete_event = next(
+                    (e for e in events if e.get("type") == "run_complete"),
+                    None,
                 )
 
-                if has_run_complete:
-                    # Run completed, not resumable
-                    continue
+                if run_complete_event:
+                    run_status = run_complete_event.get("status", "")
+                    if run_status != "failed":
+                        # Run completed successfully, not resumable
+                        continue
 
                 # Extract run info
                 run_start = next(
