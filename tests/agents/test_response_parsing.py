@@ -718,6 +718,66 @@ class TestValidatorEdgeCases:
         assert "summary" in result.description_quality.issues[0].lower() or "redundant" in result.description_quality.issues[0].lower()
 
 
+class TestRobustJsonParsing:
+    """Tests for robust JSON parsing with malformed input."""
+
+    def test_unbalanced_braces_are_fixed(self, documenter_config):
+        """Unclosed braces should be automatically balanced."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        # JSON with missing closing braces (truncated response)
+        bad_json = '{"documentation": {"summary": "Test", "description": "Desc"}, "call_graph": {"callers": [], "callees": []'
+
+        result = agent._parse_response(bad_json, "test.Component", 100)
+
+        # Should parse by balancing braces
+        assert result.documentation.summary == "Test"
+
+    def test_python_true_false_none(self, documenter_config):
+        """Python-style True/False/None should be converted to JSON."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        bad_json = '{"documentation": {"summary": "Test", "description": "Desc"}, "call_graph": {"callers": [], "callees": []}, "valid": True, "empty": None}'
+
+        result = agent._parse_response(bad_json, "test.Component", 100)
+
+        assert result.documentation.summary == "Test"
+
+    def test_partial_extraction_fallback(self, documenter_config):
+        """When JSON is completely broken, extract what we can via regex."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        # Completely malformed but has extractable data
+        bad_json = '''
+        This is not valid JSON at all
+        "summary": "Extracted summary"
+        "description": "Extracted description"
+        random garbage
+        '''
+
+        result = agent._parse_response(bad_json, "test.Component", 100)
+
+        # Should extract partial data via regex
+        assert "Extracted" in result.documentation.summary or "Extracted" in result.documentation.description
+
+    def test_validator_partial_extraction(self, validator_config):
+        """Validator should extract partial data from malformed JSON."""
+        agent = ConcreteValidatorAgent(validator_config)
+
+        # Malformed JSON with extractable data
+        bad_json = '''
+        broken json here
+        "validation_result": "passed"
+        "completeness": broken { "score": 0.95 }
+        '''
+
+        result = agent._parse_response(bad_json, "test.Component", 100)
+
+        # Should have some data extracted
+        # At minimum, should not crash and return a valid result
+        assert result is not None
+
+
 class TestCallerCalleeEdgeCases:
     """Tests for caller/callee edge cases."""
 

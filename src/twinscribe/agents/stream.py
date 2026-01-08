@@ -1427,7 +1427,6 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
 
             # Replace single quotes with double quotes (careful with apostrophes)
-            # Only replace quotes that look like JSON string delimiters
             text = re.sub(r"(?<![a-zA-Z])'([^']*)'(?![a-zA-Z])", r'"\1"', text)
 
             # Handle NaN, Infinity, -Infinity (not valid JSON)
@@ -1449,37 +1448,83 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             text = re.sub(r'{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'{"\1":', text)
             text = re.sub(r',\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r',"\1":', text)
 
+            # Fix key:value pairs inside arrays that should be wrapped in {}
+            # Pattern: ["key": "value"] -> [{"key": "value"}]
+            text = re.sub(r'\[\s*"([^"]+)"\s*:', r'[{"\\1":', text)
+
+            # Fix Python-style True/False/None
+            text = re.sub(r'\bTrue\b', 'true', text)
+            text = re.sub(r'\bFalse\b', 'false', text)
+            text = re.sub(r'\bNone\b', 'null', text)
+
             return text
+
+        def balance_braces(text: str) -> str:
+            """Try to balance unclosed braces/brackets."""
+            open_braces = text.count('{') - text.count('}')
+            open_brackets = text.count('[') - text.count(']')
+
+            # Add missing closing braces/brackets
+            if open_braces > 0:
+                text = text.rstrip() + '}' * open_braces
+            if open_brackets > 0:
+                text = text.rstrip() + ']' * open_brackets
+
+            return text
+
+        def extract_partial_json(text: str) -> dict:
+            """Extract what we can from malformed JSON using regex."""
+            result = {}
+
+            # Try to extract summary
+            summary_match = re.search(r'"summary"\s*:\s*"([^"]*)"', text)
+            if summary_match:
+                result["summary"] = summary_match.group(1)
+
+            # Try to extract description
+            desc_match = re.search(r'"description"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+            if desc_match:
+                result["description"] = desc_match.group(1)
+
+            # Try to extract confidence/score
+            conf_match = re.search(r'"(?:confidence|score)"\s*:\s*([0-9.]+)', text)
+            if conf_match:
+                result["confidence"] = float(conf_match.group(1))
+
+            return result if result else None
 
         def safe_json_parse(text: str) -> dict | None:
             """Try multiple strategies to parse JSON."""
             if not text or not text.strip():
                 return {}
 
-            # Try direct parse first
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError:
-                pass
+            strategies = [
+                # Strategy 1: Direct parse
+                lambda t: json.loads(t),
+                # Strategy 2: With basic fixes
+                lambda t: json.loads(try_fix_json(t)),
+                # Strategy 3: With balanced braces
+                lambda t: json.loads(balance_braces(try_fix_json(t))),
+                # Strategy 4: Extract JSON object from text
+                lambda t: json.loads(re.search(r'\{[\s\S]*\}', t).group()) if re.search(r'\{[\s\S]*\}', t) else None,
+                # Strategy 5: Extract and fix
+                lambda t: json.loads(try_fix_json(re.search(r'\{[\s\S]*\}', t).group())) if re.search(r'\{[\s\S]*\}', t) else None,
+                # Strategy 6: Extract, fix, and balance
+                lambda t: json.loads(balance_braces(try_fix_json(re.search(r'\{[\s\S]*\}', t).group()))) if re.search(r'\{[\s\S]*\}', t) else None,
+            ]
 
-            # Try with fixes
-            try:
-                fixed = try_fix_json(text)
-                return json.loads(fixed)
-            except json.JSONDecodeError:
-                pass
-
-            # Try to extract JSON from markdown or other wrapper
-            json_match = re.search(r'\{[\s\S]*\}', text)
-            if json_match:
+            for strategy in strategies:
                 try:
-                    return json.loads(json_match.group())
-                except json.JSONDecodeError:
-                    try:
-                        fixed = try_fix_json(json_match.group())
-                        return json.loads(fixed)
-                    except json.JSONDecodeError:
-                        pass
+                    result = strategy(text)
+                    if result is not None:
+                        return result
+                except (json.JSONDecodeError, AttributeError, TypeError):
+                    continue
+
+            # Last resort: regex extraction
+            partial = extract_partial_json(text)
+            if partial:
+                return partial
 
             return None
 
@@ -2036,26 +2081,65 @@ class ConcreteValidatorAgent(ValidatorAgent):
             # Fix unquoted property names
             text = re.sub(r'{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'{"\1":', text)
             text = re.sub(r',\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r',"\1":', text)
+            # Fix key:value pairs inside arrays that should be wrapped in {}
+            text = re.sub(r'\[\s*"([^"]+)"\s*:', r'[{"\\1":', text)
+            # Fix Python-style True/False/None
+            text = re.sub(r'\bTrue\b', 'true', text)
+            text = re.sub(r'\bFalse\b', 'false', text)
+            text = re.sub(r'\bNone\b', 'null', text)
             return text
+
+        def balance_braces(text: str) -> str:
+            """Try to balance unclosed braces/brackets."""
+            open_braces = text.count('{') - text.count('}')
+            open_brackets = text.count('[') - text.count(']')
+            if open_braces > 0:
+                text = text.rstrip() + '}' * open_braces
+            if open_brackets > 0:
+                text = text.rstrip() + ']' * open_brackets
+            return text
+
+        def extract_partial_validation(text: str) -> dict:
+            """Extract validation data from malformed JSON using regex."""
+            result = {}
+            # Try to extract validation_result
+            status_match = re.search(r'"validation_result"\s*:\s*"([^"]*)"', text)
+            if status_match:
+                result["validation_result"] = status_match.group(1)
+            # Try to extract scores
+            for field in ["completeness", "call_graph_accuracy", "description_quality"]:
+                score_match = re.search(rf'"{field}"[^{{]*"score"\s*:\s*([0-9.]+)', text)
+                if score_match:
+                    result[field] = {"score": float(score_match.group(1))}
+            return result if result else None
 
         def safe_json_parse(text: str) -> dict | None:
             """Try multiple strategies to parse JSON."""
             if not text or not text.strip():
                 return {}
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError:
-                pass
-            try:
-                return json.loads(try_fix_json(text))
-            except json.JSONDecodeError:
-                pass
-            json_match = re.search(r'\{[\s\S]*\}', text)
-            if json_match:
+
+            strategies = [
+                lambda t: json.loads(t),
+                lambda t: json.loads(try_fix_json(t)),
+                lambda t: json.loads(balance_braces(try_fix_json(t))),
+                lambda t: json.loads(re.search(r'\{[\s\S]*\}', t).group()) if re.search(r'\{[\s\S]*\}', t) else None,
+                lambda t: json.loads(try_fix_json(re.search(r'\{[\s\S]*\}', t).group())) if re.search(r'\{[\s\S]*\}', t) else None,
+                lambda t: json.loads(balance_braces(try_fix_json(re.search(r'\{[\s\S]*\}', t).group()))) if re.search(r'\{[\s\S]*\}', t) else None,
+            ]
+
+            for strategy in strategies:
                 try:
-                    return json.loads(try_fix_json(json_match.group()))
-                except json.JSONDecodeError:
-                    pass
+                    result = strategy(text)
+                    if result is not None:
+                        return result
+                except (json.JSONDecodeError, AttributeError, TypeError):
+                    continue
+
+            # Last resort: regex extraction
+            partial = extract_partial_validation(text)
+            if partial:
+                return partial
+
             return None
 
         data = safe_json_parse(content)
