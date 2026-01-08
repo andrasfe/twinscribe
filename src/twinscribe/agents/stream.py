@@ -1175,6 +1175,16 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             Parsed DocumentationOutput
         """
         import json
+        import re
+
+        # Strip markdown code fences if present (models sometimes wrap JSON in ```json ... ```)
+        content = content.strip()
+        if content.startswith("```"):
+            # Remove opening fence (with optional language specifier)
+            content = re.sub(r"^```(?:json)?\s*\n?", "", content)
+            # Remove closing fence
+            content = re.sub(r"\n?```\s*$", "", content)
+            content = content.strip()
 
         try:
             data = json.loads(content)
@@ -1188,6 +1198,20 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             )
             # Return minimal valid output
             return self._create_fallback_output(component_id, token_count)
+
+        # Handle case where model returns a list instead of dict
+        if isinstance(data, list):
+            # Use first element if it's a dict, otherwise create fallback
+            if data and isinstance(data[0], dict):
+                self._logger.warning(
+                    f"Model returned list instead of dict for {component_id}, using first element"
+                )
+                data = data[0]
+            else:
+                self._logger.error(
+                    f"Model returned invalid list for {component_id}: {data[:100] if data else '[]'}"
+                )
+                return self._create_fallback_output(component_id, token_count)
 
         # Extract documentation section
         doc_data = data.get("documentation", {})
@@ -1411,6 +1435,16 @@ class ConcreteValidatorAgent(ValidatorAgent):
             Parsed ValidationResult
         """
         import json
+        import re
+
+        # Strip markdown code fences if present (models sometimes wrap JSON in ```json ... ```)
+        content = content.strip()
+        if content.startswith("```"):
+            # Remove opening fence (with optional language specifier)
+            content = re.sub(r"^```(?:json)?\s*\n?", "", content)
+            # Remove closing fence
+            content = re.sub(r"\n?```\s*$", "", content)
+            content = content.strip()
 
         try:
             data = json.loads(content)
@@ -1423,6 +1457,19 @@ class ConcreteValidatorAgent(ValidatorAgent):
                 f"Preview: {content_preview!r}"
             )
             return self._create_fallback_result(component_id, token_count)
+
+        # Handle case where model returns a list instead of dict
+        if isinstance(data, list):
+            if data and isinstance(data[0], dict):
+                self._logger.warning(
+                    f"Model returned list instead of dict for validation of {component_id}, using first element"
+                )
+                data = data[0]
+            else:
+                self._logger.error(
+                    f"Model returned invalid list for validation of {component_id}"
+                )
+                return self._create_fallback_result(component_id, token_count)
 
         # Parse validation status
         status_str = data.get("validation_result", "warning")
