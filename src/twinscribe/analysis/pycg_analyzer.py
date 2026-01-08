@@ -234,15 +234,9 @@ class PyCGAnalyzer(Analyzer):
         Returns:
             JSON string with call graph data
         """
-        # Try library-based analysis first (more efficient)
-        try:
-            return await self._run_pycg_library(codebase_path, files)
-        except ImportError:
-            logger.debug("PyCG library not available, using subprocess")
-        except Exception as e:
-            logger.warning(f"Library analysis failed, falling back to subprocess: {e}")
-
-        # Fall back to subprocess
+        # Always use subprocess to avoid corrupting Python module state
+        # The library-based approach runs PyCG in-process which can corrupt
+        # built-in modules like unicodedata, breaking subsequent imports
         return await self._run_pycg_subprocess(codebase_path, files)
 
     async def _run_pycg_library(
