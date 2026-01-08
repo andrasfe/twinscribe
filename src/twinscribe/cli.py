@@ -597,9 +597,10 @@ async def _run_document_pipeline(
         beads_manager = None
         if cfg.beads.enabled and not dry_run:
             try:
-                from twinscribe.beads import BeadsLifecycleManager
+                from twinscribe.beads import BeadsClient, BeadsLifecycleManager
 
-                beads_manager = BeadsLifecycleManager()
+                beads_client = BeadsClient()
+                beads_manager = BeadsLifecycleManager(client=beads_client)
             except ImportError:
                 if verbose:
                     console.print("[yellow]Beads integration not available[/yellow]")
