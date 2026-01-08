@@ -9,6 +9,7 @@ accurate call graphs including dynamic dispatch resolution.
 import asyncio
 import json
 import logging
+import sys
 import tempfile
 import time
 from datetime import datetime
@@ -367,7 +368,8 @@ class PyCGAnalyzer(Analyzer):
         Returns:
             Command as list of strings
         """
-        cmd = ["pycg"]
+        # Use python -m pycg to ensure we use the installed module
+        cmd = [sys.executable, "-m", "pycg"]
 
         # Add package path for module resolution
         cmd.extend(["--package", str(codebase_path)])
