@@ -257,3 +257,43 @@ class TestTypeGuards:
         assert result.completeness.score == 1.0  # Default
         assert result.call_graph_accuracy.score == 1.0  # Default
         assert result.description_quality.score == 1.0  # Default
+
+    def test_description_as_dict_handled(self, documenter_config):
+        """Description returned as dict instead of string should be handled."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {
+                "summary": "Test",
+                "description": {
+                    "what": "This class implements logging",
+                    "how": "By printing to stdout",
+                },
+            },
+            "call_graph": {"callers": [], "callees": []},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        # Should convert dict to string by joining values
+        assert isinstance(result.documentation.description, str)
+        assert "logging" in result.documentation.description
+        assert "stdout" in result.documentation.description
+
+    def test_summary_as_dict_handled(self, documenter_config):
+        """Summary returned as dict instead of string should be handled."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {
+                "summary": {"brief": "A utility class"},
+                "description": "Detailed description here",
+            },
+            "call_graph": {"callers": [], "callees": []},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        # Should convert dict to string
+        assert isinstance(result.documentation.summary, str)
+        assert "utility" in result.documentation.summary

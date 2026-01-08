@@ -1387,8 +1387,21 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             for e in raw_raises
         ]
 
+        def ensure_string(value, default: str = "") -> str:
+            """Convert value to string, handling dicts by joining values."""
+            if value is None:
+                return default
+            if isinstance(value, str):
+                return value
+            if isinstance(value, dict):
+                # LLM sometimes returns {"what": "...", "how": "..."} - join values
+                return " ".join(str(v) for v in value.values() if v)
+            if isinstance(value, list):
+                return " ".join(str(v) for v in value if v)
+            return str(value)
+
         # Extract and truncate summary to max 200 chars (model constraint)
-        raw_summary = doc_data.get("summary", "") or doc_data.get("brief", "") or ""
+        raw_summary = ensure_string(doc_data.get("summary") or doc_data.get("brief"))
         if len(raw_summary) > 200:
             # Truncate at word boundary if possible
             truncated = raw_summary[:197]
@@ -1397,9 +1410,12 @@ class ConcreteDocumenterAgent(DocumenterAgent):
                 truncated = truncated[:last_space]
             raw_summary = truncated + "..."
 
+        # Extract description - handle dict/list instead of string
+        raw_description = ensure_string(doc_data.get("description") or doc_data.get("detailed_description"))
+
         documentation = ComponentDocumentation(
             summary=raw_summary,
-            description=doc_data.get("description", "") or doc_data.get("detailed_description", "") or "",
+            description=raw_description,
             parameters=parameters,
             returns=returns_doc,
             raises=raises,
