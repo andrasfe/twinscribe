@@ -202,6 +202,34 @@ Be thorough - missing a discrepancy is worse than flagging a false positive."""
         pass
 
     @abstractmethod
+    async def compare(
+        self,
+        stream_a_output: StreamOutput,
+        stream_b_output: StreamOutput,
+        ground_truth_call_graph: CallGraph,
+        iteration: int = 1,
+    ) -> ComparisonResult:
+        """Compare outputs from both streams.
+
+        Convenience method that wraps process() for direct comparison calls.
+        Constructs a ComparatorInput internally.
+
+        Args:
+            stream_a_output: Validated output from Stream A
+            stream_b_output: Validated output from Stream B
+            ground_truth_call_graph: Static analysis call graph (authoritative)
+            iteration: Current iteration number (default 1)
+
+        Returns:
+            Comparison result with discrepancies and convergence status
+
+        Raises:
+            RuntimeError: If agent not initialized
+            ValueError: If input is invalid
+        """
+        pass
+
+    @abstractmethod
     async def compare_component(
         self,
         component_id: str,

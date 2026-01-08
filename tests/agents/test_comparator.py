@@ -755,6 +755,22 @@ class MockComparatorAgent(ComparatorAgent):
         """Shutdown the mock agent."""
         self._initialized = False
 
+    async def compare(
+        self,
+        stream_a_output: StreamOutput,
+        stream_b_output: StreamOutput,
+        ground_truth_call_graph: CallGraph,
+        iteration: int = 1,
+    ) -> ComparisonResult:
+        """Compare outputs from both streams (mock implementation)."""
+        input_data = ComparatorInput(
+            stream_a_output=stream_a_output,
+            stream_b_output=stream_b_output,
+            ground_truth_call_graph=ground_truth_call_graph,
+            iteration=iteration,
+        )
+        return await self.process(input_data)
+
     async def compare_component(
         self,
         component_id: str,

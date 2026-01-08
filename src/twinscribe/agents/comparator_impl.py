@@ -141,6 +141,39 @@ class ConcreteComparatorAgent(ComparatorAgent):
         self._initialized = False
         logger.info("Comparator agent shut down")
 
+    async def compare(
+        self,
+        stream_a_output: StreamOutput,
+        stream_b_output: StreamOutput,
+        ground_truth_call_graph: CallGraph,
+        iteration: int = 1,
+    ) -> ComparisonResult:
+        """Compare outputs from both streams.
+
+        Convenience method that wraps process() for direct comparison calls.
+        Constructs a ComparatorInput internally.
+
+        Args:
+            stream_a_output: Validated output from Stream A
+            stream_b_output: Validated output from Stream B
+            ground_truth_call_graph: Static analysis call graph (authoritative)
+            iteration: Current iteration number (default 1)
+
+        Returns:
+            Comparison result with discrepancies and convergence status
+
+        Raises:
+            RuntimeError: If agent not initialized
+            ValueError: If input is invalid
+        """
+        input_data = ComparatorInput(
+            stream_a_output=stream_a_output,
+            stream_b_output=stream_b_output,
+            ground_truth_call_graph=ground_truth_call_graph,
+            iteration=iteration,
+        )
+        return await self.process(input_data)
+
     async def process(self, input_data: ComparatorInput) -> ComparisonResult:
         """Compare outputs from both streams.
 

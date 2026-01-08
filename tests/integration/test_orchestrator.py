@@ -483,9 +483,10 @@ class MockComparatorAgent(ComparatorAgent):
         output_a: StreamOutput,
         output_b: StreamOutput,
         ground_truth: CallGraph,
+        iteration: int = 1,
     ) -> ComparisonResult:
         """Convenience method for comparison."""
-        self._compare_calls.append((output_a, output_b, ground_truth))
+        self._compare_calls.append((output_a, output_b, ground_truth, iteration))
 
         if self._comparison_index < len(self._comparison_results):
             result = self._comparison_results[self._comparison_index]
