@@ -1288,18 +1288,38 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             content = re.sub(r"\n?```\s*$", "", content)
             content = content.strip()
 
+        def try_fix_json(text: str) -> str:
+            """Attempt to fix common JSON syntax errors from LLMs."""
+            # Remove trailing commas before ] or }
+            text = re.sub(r',\s*([}\]])', r'\1', text)
+            # Fix missing commas between elements (common: "value"  "key" -> "value", "key")
+            text = re.sub(r'"\s+(")', r'", \1', text)
+            text = re.sub(r'(\d)\s+(")', r'\1, \2', text)
+            text = re.sub(r'(true|false|null)\s+(")', r'\1, \2', text)
+            text = re.sub(r'}\s+{', r'}, {', text)
+            text = re.sub(r']\s+\[', r'], [', text)
+            return text
+
         try:
             data = json.loads(content)
-        except json.JSONDecodeError as e:
-            # Log detailed error info for debugging
-            content_preview = content[:200] if content else "<empty>"
-            self._logger.error(
-                f"Failed to parse JSON response for {component_id}: {e}\n"
-                f"Content length: {len(content) if content else 0}, "
-                f"Preview: {content_preview!r}"
-            )
-            # Return minimal valid output
-            return self._create_fallback_output(component_id, token_count)
+        except json.JSONDecodeError:
+            # Try to fix common JSON errors and retry
+            try:
+                fixed_content = try_fix_json(content)
+                data = json.loads(fixed_content)
+                self._logger.warning(
+                    f"Fixed JSON syntax errors for {component_id}"
+                )
+            except json.JSONDecodeError as e:
+                # Log detailed error info for debugging
+                content_preview = content[:200] if content else "<empty>"
+                self._logger.error(
+                    f"Failed to parse JSON response for {component_id}: {e}\n"
+                    f"Content length: {len(content) if content else 0}, "
+                    f"Preview: {content_preview!r}"
+                )
+                # Return minimal valid output
+                return self._create_fallback_output(component_id, token_count)
 
         # Handle case where model returns wrong type
         if isinstance(data, str):
@@ -1367,8 +1387,18 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             for e in raw_raises
         ]
 
+        # Extract and truncate summary to max 200 chars (model constraint)
+        raw_summary = doc_data.get("summary", "") or doc_data.get("brief", "") or ""
+        if len(raw_summary) > 200:
+            # Truncate at word boundary if possible
+            truncated = raw_summary[:197]
+            last_space = truncated.rfind(" ")
+            if last_space > 150:
+                truncated = truncated[:last_space]
+            raw_summary = truncated + "..."
+
         documentation = ComponentDocumentation(
-            summary=doc_data.get("summary", "") or doc_data.get("brief", "") or "",
+            summary=raw_summary,
             description=doc_data.get("description", "") or doc_data.get("detailed_description", "") or "",
             parameters=parameters,
             returns=returns_doc,
@@ -1605,17 +1635,37 @@ class ConcreteValidatorAgent(ValidatorAgent):
             content = re.sub(r"\n?```\s*$", "", content)
             content = content.strip()
 
+        def try_fix_json(text: str) -> str:
+            """Attempt to fix common JSON syntax errors from LLMs."""
+            # Remove trailing commas before ] or }
+            text = re.sub(r',\s*([}\]])', r'\1', text)
+            # Fix missing commas between elements (common: "value"  "key" -> "value", "key")
+            text = re.sub(r'"\s+(")', r'", \1', text)
+            text = re.sub(r'(\d)\s+(")', r'\1, \2', text)
+            text = re.sub(r'(true|false|null)\s+(")', r'\1, \2', text)
+            text = re.sub(r'}\s+{', r'}, {', text)
+            text = re.sub(r']\s+\[', r'], [', text)
+            return text
+
         try:
             data = json.loads(content)
-        except json.JSONDecodeError as e:
-            # Log detailed error info for debugging
-            content_preview = content[:200] if content else "<empty>"
-            self._logger.error(
-                f"Failed to parse JSON response for validation of {component_id}: {e}\n"
-                f"Content length: {len(content) if content else 0}, "
-                f"Preview: {content_preview!r}"
-            )
-            return self._create_fallback_result(component_id, token_count)
+        except json.JSONDecodeError:
+            # Try to fix common JSON errors and retry
+            try:
+                fixed_content = try_fix_json(content)
+                data = json.loads(fixed_content)
+                self._logger.warning(
+                    f"Fixed JSON syntax errors for validation of {component_id}"
+                )
+            except json.JSONDecodeError as e:
+                # Log detailed error info for debugging
+                content_preview = content[:200] if content else "<empty>"
+                self._logger.error(
+                    f"Failed to parse JSON response for validation of {component_id}: {e}\n"
+                    f"Content length: {len(content) if content else 0}, "
+                    f"Preview: {content_preview!r}"
+                )
+                return self._create_fallback_result(component_id, token_count)
 
         # Handle case where model returns a list instead of dict
         if isinstance(data, list):
