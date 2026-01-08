@@ -5,11 +5,17 @@ Defines the interface for a complete documentation stream that manages
 a documenter/validator pair and processes components in topological order.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from twinscribe.orchestrator.checkpoint import CheckpointManager
 
 from pydantic import BaseModel, Field
 
@@ -78,8 +84,8 @@ class StreamConfig(BaseModel):
         description="Max retries per component",
     )
     continue_on_error: bool = Field(
-        default=True,
-        description="Continue if component fails",
+        default=False,
+        description="Continue if component fails (fail-fast by default)",
     )
     rate_limit_delay: float = Field(
         default=1.0,
@@ -441,6 +447,7 @@ class ConcreteDocumentationStream(DocumentationStream):
     3. Validates generated documentation against ground truth
     4. Supports corrections and reprocessing
     5. Tracks token usage and costs throughout
+    6. Records checkpoints after each component via CheckpointManager
 
     Example:
         config = StreamConfig(
@@ -458,20 +465,24 @@ class ConcreteDocumentationStream(DocumentationStream):
         self,
         config: StreamConfig,
         progress_callback: StreamProgressCallback | None = None,
+        checkpoint_manager: "CheckpointManager | None" = None,
     ) -> None:
         """Initialize the concrete documentation stream.
 
         Args:
             config: Stream configuration with documenter and validator settings
             progress_callback: Optional callback for progress updates
+            checkpoint_manager: Optional checkpoint manager for state persistence
         """
         super().__init__(config)
         self._progress_callback = progress_callback
+        self._checkpoint_manager = checkpoint_manager
         self._llm_client: AsyncLLMClient | None = None
         self._source_code_map: dict[str, str] = {}
         self._ground_truth: CallGraph | None = None
         self._processing_context: dict[str, DocumentationOutput] = {}
         self._component_map: dict[str, Component] = {}
+        self._current_iteration: int = 1
         self._logger = logging.getLogger(f"{__name__}.{config.stream_id.value}")
 
     async def initialize(self) -> None:
@@ -607,6 +618,19 @@ class ConcreteDocumentationStream(DocumentationStream):
                         self._output.add_output(proc_result.documentation)
                         self._processing_context[component_id] = proc_result.documentation
                         result.total_tokens += proc_result.documentation.metadata.token_count or 0
+
+                        # Record checkpoint after successful documentation
+                        if self._checkpoint_manager:
+                            token_count = proc_result.documentation.metadata.token_count
+                            self._checkpoint_manager.record_component_documented(
+                                component_id=component_id,
+                                stream_id=self._config.stream_id.value,
+                                iteration=self._current_iteration,
+                                output=proc_result.documentation,
+                                duration_ms=duration_ms,
+                                token_count=token_count,
+                            )
+
                     self._logger.info(
                         f"{stream_name}: [{index + 1}/{total}] ✓ {component_id} ({duration_ms:.0f}ms)"
                     )
@@ -616,6 +640,15 @@ class ConcreteDocumentationStream(DocumentationStream):
                     self._logger.warning(
                         f"{stream_name}: [{index + 1}/{total}] ✗ {component_id} failed ({duration_ms:.0f}ms)"
                     )
+
+                    # Record error in checkpoint
+                    if self._checkpoint_manager:
+                        self._checkpoint_manager.record_error(
+                            phase="documenting",
+                            component_id=component_id,
+                            stream_id=self._config.stream_id.value,
+                            error=proc_result.error or "Unknown error",
+                        )
 
                 # Notify progress callback
                 if self._progress_callback:
@@ -639,6 +672,19 @@ class ConcreteDocumentationStream(DocumentationStream):
                 result.failed += 1
                 result.failed_component_ids.append(component_id)
 
+                # Record error in checkpoint BEFORE any potential re-raise
+                # This ensures checkpoint is saved for resume capability
+                if self._checkpoint_manager:
+                    import traceback
+                    tb = traceback.format_exc()
+                    self._checkpoint_manager.record_error(
+                        phase="documenting",
+                        component_id=component_id,
+                        stream_id=self._config.stream_id.value,
+                        error=e,
+                        traceback=tb,
+                    )
+
                 if self._progress_callback:
                     await self._progress_callback.on_error(
                         stream_id=self._config.stream_id,
@@ -646,6 +692,7 @@ class ConcreteDocumentationStream(DocumentationStream):
                         error=e,
                     )
 
+                # Fail-fast: re-raise immediately unless continue_on_error is True
                 if not self._config.continue_on_error:
                     raise
 
@@ -957,6 +1004,29 @@ class ConcreteDocumentationStream(DocumentationStream):
 
         self._logger.info("Stream shutdown complete")
 
+    def set_iteration(self, iteration: int) -> None:
+        """Set the current iteration number.
+
+        Called by the orchestrator at the start of each iteration.
+
+        Args:
+            iteration: Current iteration number (1-based)
+        """
+        self._current_iteration = iteration
+
+    def set_checkpoint_manager(self, manager: "CheckpointManager") -> None:
+        """Set the checkpoint manager for state persistence.
+
+        Args:
+            manager: CheckpointManager instance
+        """
+        self._checkpoint_manager = manager
+
+    @property
+    def checkpoint_manager(self) -> "CheckpointManager | None":
+        """Get the checkpoint manager if set."""
+        return self._checkpoint_manager
+
     def _build_dependency_context(
         self,
         component: Component,
@@ -1146,6 +1216,17 @@ class ConcreteDocumenterAgent(DocumenterAgent):
 
         # Extract call graph section
         cg_data = data.get("call_graph", {})
+
+        # Filter out entries with empty component_id to avoid Pydantic validation errors
+        callers_data = [
+            c for c in cg_data.get("callers", [])
+            if c.get("component_id", "").strip()
+        ]
+        callees_data = [
+            c for c in cg_data.get("callees", [])
+            if c.get("component_id", "").strip()
+        ]
+
         call_graph = CallGraphSection(
             callers=[
                 CallerRef(
@@ -1153,7 +1234,7 @@ class ConcreteDocumenterAgent(DocumenterAgent):
                     call_site_line=c.get("call_site_line"),
                     call_type=CallType(c.get("call_type", "direct")),
                 )
-                for c in cg_data.get("callers", [])
+                for c in callers_data
             ],
             callees=[
                 CalleeRef(
@@ -1161,7 +1242,7 @@ class ConcreteDocumenterAgent(DocumenterAgent):
                     call_site_line=c.get("call_site_line"),
                     call_type=CallType(c.get("call_type", "direct")),
                 )
-                for c in cg_data.get("callees", [])
+                for c in callees_data
             ],
         )
 

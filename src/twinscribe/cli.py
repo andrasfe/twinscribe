@@ -90,6 +90,17 @@ def main(ctx: click.Context, verbose: bool) -> None:
     default=2.0,
     help="Delay in seconds between API calls to avoid rate limits (default: 2.0)",
 )
+@click.option(
+    "--resume",
+    is_flag=True,
+    help="Resume from the last checkpoint if one exists",
+)
+@click.option(
+    "--resume-run-id",
+    type=str,
+    default=None,
+    help="Resume a specific run by its ID (use with --resume)",
+)
 @click.pass_context
 def document(
     ctx: click.Context,
@@ -102,10 +113,14 @@ def document(
     parallel: bool,
     verbose: bool,
     delay: float,
+    resume: bool,
+    resume_run_id: str | None,
 ) -> None:
     """Generate documentation for a codebase.
 
     CODEBASE_PATH is the path to the codebase to document.
+
+    Use --resume to continue from the last checkpoint if an incomplete run exists.
     """
     # Allow verbose from either global or local flag
     verbose = verbose or ctx.obj.get("verbose", False)
@@ -128,10 +143,20 @@ def document(
     config_table.add_row("Max Iterations", str(max_iterations))
     if dry_run:
         config_table.add_row("Mode", "[yellow]Dry Run[/yellow]")
+    if resume:
+        config_table.add_row("Mode", "[cyan]Resume[/cyan]")
     if config:
         config_table.add_row("Config File", config)
     console.print(config_table)
     console.print()
+
+    # Handle resume logic
+    checkpoint_state = None
+    if resume:
+        checkpoint_state = _handle_resume(output, resume_run_id, verbose)
+        if checkpoint_state is None and not resume_run_id:
+            # No resumable runs found, continue with fresh run
+            console.print("[dim]No incomplete runs found, starting fresh.[/dim]")
 
     try:
         result = run_async(
@@ -145,6 +170,7 @@ def document(
                 parallel=parallel,
                 verbose=verbose,
                 delay=delay,
+                checkpoint_state=checkpoint_state,
             )
         )
 
@@ -163,6 +189,97 @@ def document(
         sys.exit(1)
 
 
+def _handle_resume(
+    output_dir: str,
+    resume_run_id: str | None,
+    verbose: bool,
+) -> "CheckpointState | None":
+    """Handle resume logic: find and load checkpoint state.
+
+    Args:
+        output_dir: Output directory containing checkpoints
+        resume_run_id: Optional specific run ID to resume
+        verbose: Whether to show verbose output
+
+    Returns:
+        CheckpointState if a resumable run is found, None otherwise
+    """
+    from twinscribe.orchestrator.checkpoint import CheckpointManager, CheckpointState
+
+    checkpoint_dir = Path(output_dir) / "checkpoints"
+
+    # Find resumable runs
+    resumable_runs = CheckpointManager.find_resumable_runs(checkpoint_dir)
+
+    if not resumable_runs:
+        if resume_run_id:
+            console.print(f"[red]Error:[/red] No checkpoint found for run ID: {resume_run_id}")
+            sys.exit(1)
+        return None
+
+    # Select run to resume
+    selected_run = None
+    if resume_run_id:
+        # Find specific run
+        selected_run = next(
+            (r for r in resumable_runs if r["run_id"] == resume_run_id),
+            None,
+        )
+        if not selected_run:
+            console.print(f"[red]Error:[/red] Run ID '{resume_run_id}' not found.")
+            console.print("[dim]Available runs:[/dim]")
+            for run in resumable_runs[:5]:
+                console.print(f"  - {run['run_id']}")
+            sys.exit(1)
+    else:
+        # Use most recent run, but offer choice if multiple
+        if len(resumable_runs) == 1:
+            selected_run = resumable_runs[0]
+        else:
+            # Show available runs and pick most recent
+            console.print("[bold]Found incomplete runs:[/bold]")
+            resume_table = Table(show_header=True)
+            resume_table.add_column("#", style="dim")
+            resume_table.add_column("Run ID", style="cyan")
+            resume_table.add_column("Started", style="green")
+            resume_table.add_column("Components", style="yellow")
+            resume_table.add_column("Iteration", style="magenta")
+
+            for i, run in enumerate(resumable_runs[:5], 1):
+                started = run.get("started_at", "")[:19]  # Truncate timestamp
+                resume_table.add_row(
+                    str(i),
+                    run["run_id"],
+                    started,
+                    str(run["components_processed"]),
+                    str(run["last_iteration"]),
+                )
+
+            console.print(resume_table)
+            console.print()
+            console.print("[dim]Resuming most recent run. Use --resume-run-id to select a specific run.[/dim]")
+            selected_run = resumable_runs[0]
+
+    # Load checkpoint and build state
+    run_id = selected_run["run_id"]
+    console.print(f"[cyan]Resuming run:[/cyan] {run_id}")
+    console.print(
+        f"[dim]  Components processed: {selected_run['components_processed']} "
+        f"(A: {selected_run.get('stream_a_processed', '?')}, "
+        f"B: {selected_run.get('stream_b_processed', '?')})[/dim]"
+    )
+    console.print(f"[dim]  Last iteration: {selected_run['last_iteration']}[/dim]")
+
+    # Create checkpoint manager and build state
+    checkpoint_manager = CheckpointManager(
+        output_dir=output_dir,
+        run_id=run_id,
+    )
+    checkpoint_state = CheckpointState.build_state(checkpoint_manager)
+
+    return checkpoint_state
+
+
 async def _run_document_pipeline(
     codebase_path: str,
     language: str,
@@ -173,8 +290,21 @@ async def _run_document_pipeline(
     parallel: bool,
     verbose: bool,
     delay: float,
+    checkpoint_state: "CheckpointState | None" = None,
 ) -> dict | None:
     """Run the documentation pipeline asynchronously.
+
+    Args:
+        codebase_path: Path to the codebase to document
+        language: Programming language
+        config_path: Optional path to config file
+        output_dir: Output directory
+        max_iterations: Maximum iterations
+        dry_run: Whether to run in dry-run mode
+        parallel: Whether to run streams in parallel
+        verbose: Whether to show verbose output
+        delay: Delay between API calls
+        checkpoint_state: Optional checkpoint state for resuming
 
     Returns:
         Dictionary with documentation results and metrics
@@ -308,7 +438,7 @@ async def _run_document_pipeline(
     if orchestrator_available:
         console.print("\n[bold]Running Dual-Stream Documentation Pipeline[/bold]")
 
-        # Create orchestrator configuration
+        # Create orchestrator configuration with fail-fast behavior
         orch_config = OrchestratorConfig(
             max_iterations=max_iterations,
             parallel_components=10,
@@ -317,7 +447,7 @@ async def _run_document_pipeline(
             beads_timeout_hours=cfg.convergence.beads_ticket_timeout_hours,
             skip_validation=False,
             dry_run=dry_run,
-            continue_on_error=True,
+            continue_on_error=False,  # Fail-fast: quit on first error
         )
 
         # Progress callback for live updates
@@ -371,7 +501,7 @@ async def _run_document_pipeline(
                 return "openai"
             return "openrouter"  # Default to openrouter
 
-        # Create stream configurations using models config
+        # Create stream configurations using models config with fail-fast behavior
         stream_a_config = StreamConfig(
             stream_id=StreamId.STREAM_A,
             documenter_config=DocumenterConfig(
@@ -394,7 +524,7 @@ async def _run_document_pipeline(
             ),
             batch_size=5,
             max_retries=3,
-            continue_on_error=True,
+            continue_on_error=False,  # Fail-fast: quit on first error
             rate_limit_delay=delay,
         )
 
@@ -420,13 +550,33 @@ async def _run_document_pipeline(
             ),
             batch_size=5,
             max_retries=3,
-            continue_on_error=True,
+            continue_on_error=False,  # Fail-fast: quit on first error
             rate_limit_delay=delay,
         )
 
-        # Create streams
-        stream_a = ConcreteDocumentationStream(stream_a_config)
-        stream_b = ConcreteDocumentationStream(stream_b_config)
+        # Create checkpoint manager for state persistence and resume capability
+        from twinscribe.orchestrator.checkpoint import CheckpointManager
+
+        # If resuming, use the run_id from checkpoint state
+        if checkpoint_state is not None:
+            checkpoint_manager = CheckpointManager(
+                output_dir=output_dir,
+                run_id=checkpoint_state.run_id,
+            )
+            console.print(f"[dim]Resuming run: {checkpoint_state.run_id}[/dim]")
+        else:
+            checkpoint_manager = CheckpointManager(output_dir=output_dir)
+            checkpoint_manager.record_run_start(config={
+                "codebase_path": codebase_path,
+                "language": language,
+                "max_iterations": max_iterations,
+                "parallel": parallel,
+                "dry_run": dry_run,
+            })
+
+        # Create streams with checkpoint manager
+        stream_a = ConcreteDocumentationStream(stream_a_config, checkpoint_manager=checkpoint_manager)
+        stream_b = ConcreteDocumentationStream(stream_b_config, checkpoint_manager=checkpoint_manager)
 
         # Create comparator
         comparator_config = ComparatorConfig(
@@ -455,7 +605,7 @@ async def _run_document_pipeline(
                 if verbose:
                     console.print("[yellow]Beads integration not available[/yellow]")
 
-        # Create orchestrator
+        # Create orchestrator with checkpoint manager for fail-fast error handling
         orchestrator = DualStreamOrchestrator(
             config=orch_config,
             static_oracle=oracle,
@@ -463,6 +613,7 @@ async def _run_document_pipeline(
             stream_b=stream_b,
             comparator=comparator,
             beads_manager=beads_manager,
+            checkpoint_manager=checkpoint_manager,
         )
 
         # Register progress callback
@@ -476,10 +627,15 @@ async def _run_document_pipeline(
             TaskProgressColumn(),
             console=console,
         ) as progress:
-            task = progress.add_task("Documenting codebase...", total=max_iterations)
+            task_desc = "Resuming documentation..." if checkpoint_state else "Documenting codebase..."
+            task = progress.add_task(task_desc, total=max_iterations)
 
             try:
-                package = await orchestrator.run()
+                # Use resume_from_checkpoint if we have checkpoint state
+                if checkpoint_state is not None:
+                    package = await orchestrator.resume_from_checkpoint(checkpoint_state)
+                else:
+                    package = await orchestrator.run()
 
                 # Save documentation output
                 doc_path = output_path / cfg.output.documentation_file
@@ -515,14 +671,19 @@ async def _run_document_pipeline(
                 }
 
             except Exception as e:
-                console.print(f"[red]Pipeline error:[/red] {e}")
+                # Error state is already saved to checkpoint by orchestrator/stream
+                # Show clear error message with checkpoint location for resume
+                console.print(f"\n[red]Pipeline error:[/red] {e}")
+                console.print(
+                    f"[yellow]Checkpoint saved to:[/yellow] {checkpoint_manager.checkpoint_path}"
+                )
+                console.print(
+                    "[dim]You can resume from this checkpoint once the error is resolved.[/dim]"
+                )
                 if verbose:
                     console.print_exception()
-                # Still return partial results
-                return {
-                    "call_graph_edges": oracle.call_graph.edge_count if oracle.call_graph else 0,
-                    "error": str(e),
-                }
+                # Re-raise to indicate failure (fail-fast behavior)
+                raise
 
     else:
         # Return just the static analysis results

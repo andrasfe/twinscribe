@@ -7,17 +7,24 @@ Main orchestrator that coordinates the entire documentation pipeline:
 - Comparison and convergence
 - Beads integration for discrepancy resolution
 - Final output generation
+- Resume from checkpoint capability
 """
 
 import asyncio
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from twinscribe.orchestrator.checkpoint import CheckpointManager, CheckpointState
+
+logger = logging.getLogger(__name__)
 
 
 class OrchestratorPhase(str, Enum):
@@ -68,7 +75,7 @@ class OrchestratorConfig(BaseModel):
     beads_timeout_hours: int = Field(default=48, ge=0)
     skip_validation: bool = Field(default=False)
     dry_run: bool = Field(default=False)
-    continue_on_error: bool = Field(default=True)
+    continue_on_error: bool = Field(default=False, description="Continue if component fails (fail-fast by default)")
 
 
 @dataclass
@@ -168,6 +175,7 @@ class DualStreamOrchestrator:
         stream_b: "DocumentationStream",
         comparator: "ComparatorAgent",
         beads_manager: Optional["BeadsLifecycleManager"] = None,
+        checkpoint_manager: Optional["CheckpointManager"] = None,
     ) -> None:
         """Initialize the orchestrator.
 
@@ -178,6 +186,7 @@ class DualStreamOrchestrator:
             stream_b: Second documentation stream
             comparator: Comparator agent for comparing outputs
             beads_manager: Optional Beads manager for ticket handling
+            checkpoint_manager: Optional checkpoint manager for state persistence
         """
         self._config = config
         self._oracle = static_oracle
@@ -185,6 +194,7 @@ class DualStreamOrchestrator:
         self._stream_b = stream_b
         self._comparator = comparator
         self._beads_manager = beads_manager
+        self._checkpoint_manager = checkpoint_manager
 
         # State
         self._state = OrchestratorState()
@@ -228,6 +238,70 @@ class DualStreamOrchestrator:
             except Exception:
                 pass  # Don't let callback errors affect processing
 
+    async def resume_from_checkpoint(
+        self,
+        checkpoint_state: "CheckpointState",
+    ) -> "DocumentationPackage":
+        """Resume a documentation run from a checkpoint.
+
+        This method restores state from a checkpoint and continues
+        processing from where it left off, skipping already-processed
+        components.
+
+        Args:
+            checkpoint_state: Reconstructed state from checkpoint
+
+        Returns:
+            Final documentation package
+
+        Raises:
+            OrchestratorError: If resume fails
+        """
+        logger.info(
+            f"Resuming run {checkpoint_state.run_id} from iteration "
+            f"{checkpoint_state.current_iteration}"
+        )
+
+        # Restore state from checkpoint
+        self._state.iteration = checkpoint_state.last_iteration
+        self._state.start_time = datetime.utcnow()
+
+        # Store checkpoint state for filtering components
+        self._resume_state = checkpoint_state
+
+        # Log resume info
+        processed_a = len(checkpoint_state.processed_components.get("A", []))
+        processed_b = len(checkpoint_state.processed_components.get("B", []))
+        logger.info(
+            f"Checkpoint state: {processed_a} components in stream A, "
+            f"{processed_b} components in stream B"
+        )
+
+        # Run the normal pipeline - it will use _resume_state to skip components
+        return await self.run()
+
+    def _get_unprocessed_components(
+        self,
+        components: list["Component"],
+        stream_id: str,
+    ) -> list["Component"]:
+        """Filter out components already processed in a stream.
+
+        Used during resume to skip components that were already documented.
+
+        Args:
+            components: Full list of components to potentially process
+            stream_id: Stream identifier (A or B)
+
+        Returns:
+            List of components that still need processing
+        """
+        if not hasattr(self, "_resume_state") or self._resume_state is None:
+            return components
+
+        processed_set = self._resume_state.get_processed_set(stream_id)
+        return [c for c in components if c.component_id not in processed_set]
+
     async def run(self) -> "DocumentationPackage":
         """Execute the full documentation pipeline.
 
@@ -263,6 +337,27 @@ class DualStreamOrchestrator:
             self._state.phase = OrchestratorPhase.FAILED
             self._state.errors.append(str(e))
             self._notify_progress()
+
+            # Record error to checkpoint BEFORE raising for resume capability
+            if self._checkpoint_manager:
+                import traceback
+                tb = traceback.format_exc()
+                self._checkpoint_manager.record_error(
+                    phase=self._state.phase.value,
+                    error=e,
+                    traceback=tb,
+                )
+                # Also record run as failed so checkpoint shows final state
+                self._checkpoint_manager.record_run_complete(
+                    status="failed",
+                    metrics={
+                        "total_iterations": self._state.iteration,
+                        "total_components": self._state.total_components,
+                        "processed_components": self._state.processed_components,
+                        "error": str(e),
+                    },
+                )
+
             raise OrchestratorError(f"Pipeline failed: {e}") from e
 
     async def _initialize(self) -> None:
@@ -534,7 +629,7 @@ class DualStreamOrchestrator:
     def _get_components_to_process(self) -> list["Component"]:
         """Get components to process in this iteration.
 
-        First iteration: all components (filtered)
+        First iteration: all components (filtered), minus already-processed if resuming
         Subsequent iterations: only components with discrepancies
 
         Returns:
@@ -545,6 +640,24 @@ class DualStreamOrchestrator:
             c for c in self._components
             if not self._should_exclude_component(c.component_id)
         ]
+
+        # If resuming, filter out already-processed components
+        # We check for components processed in BOTH streams since comparison
+        # requires output from both
+        if hasattr(self, "_resume_state") and self._resume_state is not None:
+            processed_a = self._resume_state.get_processed_set("A")
+            processed_b = self._resume_state.get_processed_set("B")
+            # Component is fully processed if it's in both streams
+            fully_processed = processed_a & processed_b
+
+            if fully_processed:
+                logger.info(
+                    f"Resuming: skipping {len(fully_processed)} already-processed components"
+                )
+                filtered = [
+                    c for c in filtered
+                    if c.component_id not in fully_processed
+                ]
 
         if self._state.iteration == 1:
             return filtered

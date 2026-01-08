@@ -51,9 +51,19 @@ from twinscribe.orchestrator.orchestrator import (
     OrchestratorState,
     ProgressCallback,
 )
+from twinscribe.orchestrator.checkpoint import (
+    CheckpointEvent,
+    CheckpointManager,
+    ComponentDocumentedEvent,
+    DiscoveryCompleteEvent,
+    ErrorEvent,
+    IterationCompleteEvent,
+    RunCompleteEvent,
+    RunStartEvent,
+)
 from twinscribe.orchestrator.state import (
     Checkpoint,
-    CheckpointManager,
+    CheckpointManager as LegacyCheckpointManager,
     ProgressTracker,
     StateRecovery,
 )
@@ -76,9 +86,18 @@ __all__ = [
     "ConvergenceHistoryEntry",
     "BlockingDiscrepancyType",
     "calculate_similarity",
-    # State
-    "Checkpoint",
+    # Checkpoint (JSONL append-only)
     "CheckpointManager",
+    "CheckpointEvent",
+    "RunStartEvent",
+    "DiscoveryCompleteEvent",
+    "ComponentDocumentedEvent",
+    "ErrorEvent",
+    "IterationCompleteEvent",
+    "RunCompleteEvent",
+    # State (Legacy)
+    "Checkpoint",
+    "LegacyCheckpointManager",
     "StateRecovery",
     "ProgressTracker",
 ]
