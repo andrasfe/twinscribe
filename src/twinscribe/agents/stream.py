@@ -1179,7 +1179,13 @@ class ConcreteDocumenterAgent(DocumenterAgent):
         try:
             data = json.loads(content)
         except json.JSONDecodeError as e:
-            self._logger.error(f"Failed to parse JSON response: {e}")
+            # Log detailed error info for debugging
+            content_preview = content[:200] if content else "<empty>"
+            self._logger.error(
+                f"Failed to parse JSON response for {component_id}: {e}\n"
+                f"Content length: {len(content) if content else 0}, "
+                f"Preview: {content_preview!r}"
+            )
             # Return minimal valid output
             return self._create_fallback_output(component_id, token_count)
 
@@ -1409,7 +1415,13 @@ class ConcreteValidatorAgent(ValidatorAgent):
         try:
             data = json.loads(content)
         except json.JSONDecodeError as e:
-            self._logger.error(f"Failed to parse JSON response: {e}")
+            # Log detailed error info for debugging
+            content_preview = content[:200] if content else "<empty>"
+            self._logger.error(
+                f"Failed to parse JSON response for validation of {component_id}: {e}\n"
+                f"Content length: {len(content) if content else 0}, "
+                f"Preview: {content_preview!r}"
+            )
             return self._create_fallback_result(component_id, token_count)
 
         # Parse validation status

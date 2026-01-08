@@ -600,16 +600,31 @@ class AsyncLLMClient:
         finish_reason = choice.get("finish_reason", "stop")
 
         # Detect empty responses (indicates API issue)
-        if not content or not content.strip():
+        # Handle cases where content might be None, empty string, whitespace-only,
+        # or a non-string type (some models return lists/dicts)
+        content_is_empty = (
+            content is None
+            or (isinstance(content, str) and not content.strip())
+            or (isinstance(content, (list, dict)) and not content)
+        )
+        if content_is_empty:
             logger.warning(
                 f"[{time.strftime('%H:%M:%S')}] Empty response from {model_config.name}, "
-                f"finish_reason={finish_reason}"
+                f"finish_reason={finish_reason}, content_type={type(content).__name__}"
             )
             # Raise retriable error for empty responses
             raise APIError(
-                "Model returned empty response",
+                f"Model returned empty response (type={type(content).__name__})",
                 status_code=500,  # Treat as server error for retry
             )
+
+        # Ensure content is a string for downstream processing
+        if not isinstance(content, str):
+            logger.warning(
+                f"[{time.strftime('%H:%M:%S')}] Non-string content from {model_config.name}, "
+                f"converting {type(content).__name__} to JSON string"
+            )
+            content = json.dumps(content)
 
         # Extract usage
         usage_data = data.get("usage", {})

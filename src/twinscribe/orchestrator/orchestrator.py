@@ -580,9 +580,11 @@ class DualStreamOrchestrator:
         self._state.phase = OrchestratorPhase.COMPARING
         self._notify_progress()
 
+        # Extract StreamOutput from StreamResult for comparator
+        # (stream.process() returns StreamResult which wraps StreamOutput)
         comparison = await self._comparator.compare(
-            output_a,
-            output_b,
+            output_a.output,
+            output_b.output,
             self._oracle.call_graph,
         )
 

@@ -27,6 +27,7 @@ from twinscribe.agents.stream import (
     ComponentProcessingResult,
     DocumentationStream,
     StreamConfig,
+    StreamResult,
 )
 from twinscribe.analysis.oracle import OracleConfig, StaticAnalysisOracle
 from twinscribe.beads.lifecycle import BeadsLifecycleManager, LifecycleManagerConfig
@@ -397,7 +398,7 @@ class MockDocumentationStream(DocumentationStream):
         components: list[Component],
         source_code_map: dict[str, str],
         ground_truth: Any,
-    ) -> StreamOutput:
+    ) -> StreamResult:
         """Process components using mock output."""
         if not self._initialized:
             raise RuntimeError("Stream not initialized")
@@ -406,7 +407,13 @@ class MockDocumentationStream(DocumentationStream):
             self._output = self._mock_output
             self._outputs_dict = dict(self._mock_output.outputs)
 
-        return self._output
+        # Return StreamResult wrapping the StreamOutput
+        return StreamResult(
+            stream_id=self._config.stream_id,
+            output=self._output,
+            successful=len(self._output.outputs),
+            failed=0,
+        )
 
     async def process_component(
         self,
