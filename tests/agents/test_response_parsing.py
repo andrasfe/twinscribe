@@ -297,3 +297,127 @@ class TestTypeGuards:
         # Should convert dict to string
         assert isinstance(result.documentation.summary, str)
         assert "utility" in result.documentation.summary
+
+    def test_examples_as_string_handled(self, documenter_config):
+        """Examples returned as string instead of list should be handled."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {
+                "summary": "Test",
+                "description": "Desc",
+                "examples": "print('hello world')",  # String instead of list
+            },
+            "call_graph": {"callers": [], "callees": []},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        # Should wrap in list
+        assert isinstance(result.documentation.examples, list)
+        assert len(result.documentation.examples) == 1
+        assert "hello world" in result.documentation.examples[0]
+
+    def test_invalid_call_type_defaults_to_direct(self, documenter_config):
+        """Invalid call_type values should default to 'direct'."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {"summary": "Test", "description": "Desc"},
+            "call_graph": {
+                "callers": [
+                    {"component_id": "foo.bar", "call_type": "inherited"},  # Invalid
+                ],
+                "callees": [
+                    {"component_id": "baz.qux", "call_type": "indirect"},  # Invalid
+                ],
+            },
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        # Should default to DIRECT, not crash
+        from twinscribe.models.base import CallType
+        assert result.call_graph.callers[0].call_type == CallType.DIRECT
+        assert result.call_graph.callees[0].call_type == CallType.DIRECT
+
+    def test_call_site_line_as_string_handled(self, documenter_config):
+        """call_site_line as string should be converted to int."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {"summary": "Test", "description": "Desc"},
+            "call_graph": {
+                "callers": [
+                    {"component_id": "foo.bar", "call_site_line": "42"},  # String
+                ],
+                "callees": [
+                    {"component_id": "baz.qux", "call_site_line": "100"},  # String
+                ],
+            },
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        # Should convert to int
+        assert result.call_graph.callers[0].call_site_line == 42
+        assert result.call_graph.callees[0].call_site_line == 100
+
+    def test_documentation_as_string_handled(self, documenter_config):
+        """documentation field as string instead of dict should be handled."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": "This is a simple utility function.",
+            "call_graph": {"callers": [], "callees": []},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        # Should use string as description
+        assert "utility function" in result.documentation.description
+
+    def test_parameter_description_as_dict_handled(self, documenter_config):
+        """Parameter description as dict should be converted to string."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {
+                "summary": "Test",
+                "description": "Desc",
+                "parameters": [
+                    {
+                        "name": "config",
+                        "type": {"base": "dict", "nested": "str"},  # Dict type
+                        "description": {"what": "Configuration options"},  # Dict desc
+                    }
+                ],
+            },
+            "call_graph": {"callers": [], "callees": []},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        # Should convert to strings
+        assert isinstance(result.documentation.parameters[0].type, str)
+        assert isinstance(result.documentation.parameters[0].description, str)
+        assert "Configuration" in result.documentation.parameters[0].description
+
+    def test_raises_as_single_dict_handled(self, documenter_config):
+        """raises as single dict instead of list should be handled."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {
+                "summary": "Test",
+                "description": "Desc",
+                "raises": {"type": "ValueError", "condition": "when input invalid"},
+            },
+            "call_graph": {"callers": [], "callees": []},
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        # Should wrap in list
+        assert len(result.documentation.raises) == 1
+        assert result.documentation.raises[0].type == "ValueError"

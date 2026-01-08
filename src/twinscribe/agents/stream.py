@@ -1341,52 +1341,6 @@ class ConcreteDocumenterAgent(DocumenterAgent):
                 )
                 return self._create_fallback_output(component_id, token_count)
 
-        # Extract documentation section - handle various LLM response formats
-        # Some models return {"documentation": {...}}, others return fields at top level
-        doc_data = data.get("documentation", {})
-        if not doc_data or (not doc_data.get("summary") and not doc_data.get("description")):
-            # Try top-level fields if documentation section is empty
-            doc_data = data
-
-        # Safely extract parameters - handle LLM returning strings instead of dicts
-        raw_params = doc_data.get("parameters", [])
-        if not isinstance(raw_params, list):
-            raw_params = []
-        parameters = [
-            ParameterDoc(
-                name=p.get("name", "") if isinstance(p, dict) else str(p),
-                type=p.get("type") if isinstance(p, dict) else None,
-                description=p.get("description", "") if isinstance(p, dict) else "",
-                default=p.get("default") if isinstance(p, dict) else None,
-                required=p.get("required", True) if isinstance(p, dict) else True,
-            )
-            for p in raw_params
-        ]
-
-        # Safely extract returns - handle LLM returning string instead of dict
-        raw_returns = doc_data.get("returns")
-        returns_doc = None
-        if raw_returns:
-            if isinstance(raw_returns, dict):
-                returns_doc = ReturnDoc(
-                    type=raw_returns.get("type"),
-                    description=raw_returns.get("description", ""),
-                )
-            elif isinstance(raw_returns, str):
-                returns_doc = ReturnDoc(type=None, description=raw_returns)
-
-        # Safely extract raises - handle LLM returning strings instead of dicts
-        raw_raises = doc_data.get("raises", [])
-        if not isinstance(raw_raises, list):
-            raw_raises = []
-        raises = [
-            ExceptionDoc(
-                type=e.get("type", "Exception") if isinstance(e, dict) else str(e),
-                condition=e.get("condition", "") if isinstance(e, dict) else "",
-            )
-            for e in raw_raises
-        ]
-
         def ensure_string(value, default: str = "") -> str:
             """Convert value to string, handling dicts by joining values."""
             if value is None:
@@ -1399,6 +1353,92 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             if isinstance(value, list):
                 return " ".join(str(v) for v in value if v)
             return str(value)
+
+        def ensure_list(value, default: list = None) -> list:
+            """Convert value to list if it's a string or other type."""
+            if default is None:
+                default = []
+            if value is None:
+                return default
+            if isinstance(value, list):
+                return value
+            if isinstance(value, str):
+                return [value] if value.strip() else default
+            return default
+
+        def safe_int(value, default: int | None = None) -> int | None:
+            """Convert value to int, handling strings."""
+            if value is None:
+                return default
+            if isinstance(value, int):
+                return value
+            if isinstance(value, str):
+                try:
+                    return int(value)
+                except ValueError:
+                    return default
+            if isinstance(value, float):
+                return int(value)
+            return default
+
+        def safe_call_type(value: str | None) -> CallType:
+            """Convert string to CallType, defaulting to DIRECT for invalid values."""
+            if not value:
+                return CallType.DIRECT
+            try:
+                return CallType(value.lower())
+            except ValueError:
+                # LLM returned invalid call type like "inherited", "indirect", etc.
+                return CallType.DIRECT
+
+        # Extract documentation section - handle various LLM response formats
+        # Some models return {"documentation": {...}}, others return fields at top level
+        doc_data = data.get("documentation", {})
+        if not isinstance(doc_data, dict):
+            # LLM returned documentation as a string
+            doc_data = {"description": ensure_string(doc_data)}
+        if not doc_data or (not doc_data.get("summary") and not doc_data.get("description")):
+            # Try top-level fields if documentation section is empty
+            doc_data = data
+
+        # Safely extract parameters - handle LLM returning strings instead of dicts
+        raw_params = doc_data.get("parameters", [])
+        if not isinstance(raw_params, list):
+            raw_params = [raw_params] if raw_params else []
+        parameters = [
+            ParameterDoc(
+                name=p.get("name", "") if isinstance(p, dict) else str(p),
+                type=ensure_string(p.get("type")) if isinstance(p, dict) else None,
+                description=ensure_string(p.get("description", "")) if isinstance(p, dict) else "",
+                default=p.get("default") if isinstance(p, dict) else None,
+                required=p.get("required", True) if isinstance(p, dict) else True,
+            )
+            for p in raw_params
+        ]
+
+        # Safely extract returns - handle LLM returning string instead of dict
+        raw_returns = doc_data.get("returns")
+        returns_doc = None
+        if raw_returns:
+            if isinstance(raw_returns, dict):
+                returns_doc = ReturnDoc(
+                    type=ensure_string(raw_returns.get("type")),
+                    description=ensure_string(raw_returns.get("description", "")),
+                )
+            else:
+                returns_doc = ReturnDoc(type=None, description=ensure_string(raw_returns))
+
+        # Safely extract raises - handle LLM returning strings instead of dicts
+        raw_raises = doc_data.get("raises", [])
+        if not isinstance(raw_raises, list):
+            raw_raises = [raw_raises] if raw_raises else []
+        raises = [
+            ExceptionDoc(
+                type=ensure_string(e.get("type", "Exception")) if isinstance(e, dict) else str(e),
+                condition=ensure_string(e.get("condition", "")) if isinstance(e, dict) else "",
+            )
+            for e in raw_raises
+        ]
 
         # Extract and truncate summary to max 200 chars (model constraint)
         raw_summary = ensure_string(doc_data.get("summary") or doc_data.get("brief"))
@@ -1413,13 +1453,17 @@ class ConcreteDocumenterAgent(DocumenterAgent):
         # Extract description - handle dict/list instead of string
         raw_description = ensure_string(doc_data.get("description") or doc_data.get("detailed_description"))
 
+        # Handle examples - could be string instead of list
+        raw_examples = doc_data.get("examples", [])
+        examples = ensure_list(raw_examples)
+
         documentation = ComponentDocumentation(
             summary=raw_summary,
             description=raw_description,
             parameters=parameters,
             returns=returns_doc,
             raises=raises,
-            examples=doc_data.get("examples", []),
+            examples=examples,
         )
 
         # Extract call graph section - handle LLM returning string instead of dict
@@ -1448,16 +1492,16 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             callers=[
                 CallerRef(
                     component_id=c.get("component_id", ""),
-                    call_site_line=c.get("call_site_line"),
-                    call_type=CallType(c.get("call_type", "direct")),
+                    call_site_line=safe_int(c.get("call_site_line")),
+                    call_type=safe_call_type(c.get("call_type")),
                 )
                 for c in callers_data
             ],
             callees=[
                 CalleeRef(
                     component_id=c.get("component_id", ""),
-                    call_site_line=c.get("call_site_line"),
-                    call_type=CallType(c.get("call_type", "direct")),
+                    call_site_line=safe_int(c.get("call_site_line")),
+                    call_type=safe_call_type(c.get("call_type")),
                 )
                 for c in callees_data
             ],
