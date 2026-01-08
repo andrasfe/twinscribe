@@ -332,6 +332,14 @@ class DocumentationStream(ABC):
         """
         return self._output.get_output(component_id)
 
+    def get_outputs(self) -> dict[str, DocumentationOutput]:
+        """Get all documentation outputs.
+
+        Returns:
+            Dict mapping component_id to DocumentationOutput
+        """
+        return self._output.outputs
+
     def get_all_component_ids(self) -> list[str]:
         """Get IDs of all documented components.
 

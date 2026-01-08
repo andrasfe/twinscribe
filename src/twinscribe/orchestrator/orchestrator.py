@@ -387,6 +387,9 @@ class DualStreamOrchestrator:
         await self._stream_a.initialize()
         await self._stream_b.initialize()
 
+        # Initialize comparator agent
+        await self._comparator.initialize()
+
         # Initialize Beads manager if available
         if self._beads_manager:
             await self._beads_manager.initialize()
@@ -1031,19 +1034,19 @@ class DualStreamOrchestrator:
             history.append(
                 ConvergenceHistoryEntry(
                     iteration=result.iteration,
-                    components_processed=result.components_processed,
-                    discrepancies_found=result.discrepancies_found,
-                    discrepancies_resolved=result.discrepancies_resolved,
+                    total_components=result.components_processed,
+                    discrepancies=result.discrepancies_found,
+                    resolved=result.discrepancies_resolved,
                     call_graph_match_rate=result.metrics.get("call_graph_match_rate", 0),
                     documentation_similarity=result.metrics.get("documentation_similarity", 0),
                 )
             )
 
         return ConvergenceReport(
-            converged=converged,
             total_iterations=self._state.iteration,
             final_status="converged" if converged else "max_iterations_reached",
             history=history,
+            forced_convergence=not converged,
         )
 
     def _calculate_final_metrics(self) -> "RunMetrics":

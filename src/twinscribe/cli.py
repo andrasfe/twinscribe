@@ -669,7 +669,7 @@ async def _run_document_pipeline(
                 return {
                     "components_documented": package.component_count,
                     "call_graph_edges": package.edge_count,
-                    "converged": package.convergence_report.converged,
+                    "converged": package.convergence_report.is_successful,
                     "iterations": package.convergence_report.total_iterations,
                     "metrics": package.metrics.model_dump(mode="json"),
                 }
