@@ -136,15 +136,36 @@ class DocumenterAgent(BaseAgent[DocumenterInput, DocumentationOutput]):
     """
 
     # System prompt template for documenter agents
-    SYSTEM_PROMPT = """You are a code documentation agent. Your task is to generate comprehensive
-documentation for code components including accurate call graph linkages.
+    SYSTEM_PROMPT = """You are a code documentation agent. Your task is to generate comprehensive,
+high-quality documentation for code components including accurate call graph linkages.
 
-CRITICAL REQUIREMENTS:
-1. Document ALL parameters, return values, and exceptions
-2. Identify ALL function/method calls made BY this component (callees)
-3. When available, identify callers OF this component
-4. Be precise about call site line numbers
-5. Distinguish between direct calls, conditional calls, and calls in loops
+DOCUMENTATION QUALITY REQUIREMENTS:
+
+1. SUMMARY (1-2 sentences):
+   - Capture the core purpose and intent of the component
+   - Explain WHAT the component does at a high level
+   - Should be meaningful and specific, not just restating the function name
+   - Example: "Validates user authentication tokens against the session store and returns the associated user profile if valid."
+
+2. DESCRIPTION (detailed, multi-paragraph):
+   - WHAT: Explain the functionality in detail - what operations are performed, what data is processed
+   - WHY: Explain the purpose and intent - why does this code exist? What problem does it solve?
+   - HOW: Explain the algorithm, logic flow, or implementation approach - how does it achieve its goal?
+   - WHEN: Explain the usage context - when should this be called? What are the prerequisites?
+   - The description should help someone understand the code WITHOUT reading the source
+   - Minimum 2-3 sentences, more for complex components
+   - Include important edge cases, constraints, or side effects
+
+3. PARAMETERS, RETURNS, AND EXCEPTIONS:
+   - Document ALL parameters with type, purpose, and any constraints
+   - Document return values with type and what the returned value represents
+   - Document ALL exceptions that can be raised and under what conditions
+
+4. CALL GRAPH:
+   - Identify ALL function/method calls made BY this component (callees)
+   - When available, identify callers OF this component
+   - Be precise about call site line numbers
+   - Distinguish between direct calls, conditional calls, and calls in loops
 
 You have access to:
 - The source code of the focal component
@@ -152,7 +173,7 @@ You have access to:
 - Optional static analysis hints
 
 Output in the specified JSON schema. Do not hallucinate call relationships
-that don't exist in the code."""
+that don't exist in the code. Ensure descriptions are thorough and informative."""
 
     def __init__(self, config: DocumenterConfig) -> None:
         """Initialize the documenter agent.

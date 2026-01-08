@@ -119,6 +119,55 @@ class CallGraphAccuracy(BaseModel):
         return len(self.verified_callees) / total if total > 0 else 1.0
 
 
+class DescriptionQuality(BaseModel):
+    """Result of documentation description quality validation.
+
+    Checks whether summary and description are meaningful, detailed,
+    and explain the purpose/intent of the code.
+
+    Attributes:
+        score: Quality score from 0.0 to 1.0
+        issues: List of specific quality issues found
+    """
+
+    score: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Description quality score",
+    )
+    issues: list[str] = Field(
+        default_factory=list,
+        description="Specific quality issues found",
+        examples=[
+            [
+                "summary_too_brief",
+                "description_too_brief",
+                "missing_purpose",
+            ]
+        ],
+    )
+
+    @computed_field
+    @property
+    def is_acceptable(self) -> bool:
+        """True if no critical quality issues found."""
+        critical_issues = {
+            "summary_empty",
+            "description_empty",
+            "description_too_brief",
+            "missing_purpose",
+            "missing_functionality",
+        }
+        return not any(issue in critical_issues for issue in self.issues)
+
+    @computed_field
+    @property
+    def has_issues(self) -> bool:
+        """True if any quality issues were found."""
+        return len(self.issues) > 0
+
+
 class CorrectionApplied(BaseModel):
     """Record of a correction applied by the validator.
 
@@ -202,6 +251,7 @@ class ValidationResult(BaseModel):
         validation_result: Overall pass/fail/warning status
         completeness: Documentation completeness check results
         call_graph_accuracy: Call graph validation results
+        description_quality: Description quality check results
         corrections_applied: List of corrections made
         metadata: Validator agent information
     """
@@ -219,6 +269,10 @@ class ValidationResult(BaseModel):
     call_graph_accuracy: CallGraphAccuracy = Field(
         default_factory=CallGraphAccuracy,
         description="Call graph accuracy results",
+    )
+    description_quality: DescriptionQuality = Field(
+        default_factory=DescriptionQuality,
+        description="Description quality check results",
     )
     corrections_applied: list[CorrectionApplied] = Field(
         default_factory=list,

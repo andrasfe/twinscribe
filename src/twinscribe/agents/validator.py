@@ -138,7 +138,7 @@ class ValidatorAgent(BaseAgent[ValidatorInput, ValidationResult]):
 
     # System prompt template for validator agents
     SYSTEM_PROMPT = """You are a documentation validation agent. Your task is to verify that
-documentation is complete and that call graph linkages are accurate.
+documentation is complete, high-quality, and that call graph linkages are accurate.
 
 You have access to:
 1. The documentation to validate
@@ -146,17 +146,39 @@ You have access to:
 3. Static analysis call graph (THIS IS GROUND TRUTH)
 
 VALIDATION RULES:
-- All parameters in code must be documented
-- All return paths must be documented
-- All exceptions that can be raised must be documented
-- Call graph MUST match static analysis (static analysis wins if conflict)
 
-If you find discrepancies between documented call graph and static analysis:
-- Trust static analysis
-- Flag the discrepancy
-- Apply correction
+1. DESCRIPTION QUALITY (Critical - check this carefully):
+   - Summary must be non-empty and meaningful (not just restating the function name)
+   - Description must be at least 2-3 sentences explaining functionality
+   - Description must explain PURPOSE/INTENT, not just list parameters
+   - Description should cover WHAT, WHY, HOW, and WHEN aspects
+   - Description should help understand the code without reading source
 
-Output validation results in the specified JSON schema."""
+   Flag these description quality issues:
+   - "summary_empty": Summary is missing or empty
+   - "summary_too_brief": Summary is just one or two words
+   - "summary_restates_name": Summary just restates the function/class name
+   - "description_empty": Description is missing or empty
+   - "description_too_brief": Description is less than 2 sentences
+   - "missing_purpose": Description doesn't explain WHY the code exists
+   - "missing_functionality": Description doesn't explain WHAT the code does
+   - "missing_usage_context": Description doesn't explain WHEN to use it
+   - "description_restates_params": Description only lists parameters without explaining logic
+
+2. COMPLETENESS:
+   - All parameters in code must be documented
+   - All return paths must be documented
+   - All exceptions that can be raised must be documented
+
+3. CALL GRAPH ACCURACY:
+   - Call graph MUST match static analysis (static analysis wins if conflict)
+   - If you find discrepancies between documented call graph and static analysis:
+     - Trust static analysis
+     - Flag the discrepancy
+     - Apply correction
+
+Output validation results in the specified JSON schema. Include description_quality
+assessment with a score and list of specific issues found."""
 
     def __init__(self, config: ValidatorConfig) -> None:
         """Initialize the validator agent.
@@ -316,12 +338,24 @@ Output validation results in the specified JSON schema."""
             [
                 "",
                 "## Validation Tasks",
-                "1. Check all parameters are documented",
-                "2. Check return value is documented (if function returns something)",
-                "3. Check all exceptions are documented",
-                "4. Compare documented callees against ground truth",
-                "5. Compare documented callers against ground truth",
-                "6. Apply corrections for any call graph discrepancies",
+                "",
+                "### Description Quality (Critical)",
+                "1. Check summary is non-empty and meaningful (not just restating function name)",
+                "2. Check description is at least 2-3 sentences",
+                "3. Check description explains PURPOSE (why the code exists)",
+                "4. Check description explains FUNCTIONALITY (what it does)",
+                "5. Check description explains USAGE CONTEXT (when to use it)",
+                "6. Flag any quality issues found in description_quality.issues",
+                "",
+                "### Completeness",
+                "7. Check all parameters are documented",
+                "8. Check return value is documented (if function returns something)",
+                "9. Check all exceptions are documented",
+                "",
+                "### Call Graph Accuracy",
+                "10. Compare documented callees against ground truth",
+                "11. Compare documented callers against ground truth",
+                "12. Apply corrections for any call graph discrepancies",
                 "",
                 "Output validation results in the specified JSON format.",
             ]
@@ -384,6 +418,20 @@ Output validation results in the specified JSON schema."""
                         "false_callers": {
                             "type": "array",
                             "items": {"type": "string"},
+                        },
+                    },
+                },
+                "description_quality": {
+                    "type": "object",
+                    "properties": {
+                        "score": {"type": "number"},
+                        "issues": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Quality issues like: summary_empty, summary_too_brief, "
+                            "summary_restates_name, description_empty, description_too_brief, "
+                            "missing_purpose, missing_functionality, missing_usage_context, "
+                            "description_restates_params",
                         },
                     },
                 },

@@ -50,6 +50,7 @@ from twinscribe.models.validation import (
     CallGraphAccuracy,
     CompletenessCheck,
     CorrectionApplied,
+    DescriptionQuality,
     ValidationResult,
     ValidatorMetadata,
 )
@@ -786,26 +787,41 @@ class ConcreteDocumentationStream(DocumentationStream):
                 validation = await self._validator.process(validator_input)
                 result.validation = validation
 
-                # Check if validation passed
-                if validation.is_valid:
+                # Check if validation passed AND description quality is acceptable
+                if validation.is_valid and validation.description_quality.is_acceptable:
                     result.success = True
                     result.retries = retries
                     return result
 
-                # If validation failed but we have corrections, apply them
-                if validation.corrections_applied and retries < max_retries:
+                # Build corrections list from both explicit corrections and quality issues
+                all_corrections = [
+                    {
+                        "field": c.field,
+                        "action": c.action,
+                        "reason": c.reason,
+                    }
+                    for c in validation.corrections_applied
+                ]
+
+                # Add description quality issues as corrections if present
+                if validation.description_quality.has_issues:
+                    for issue in validation.description_quality.issues:
+                        all_corrections.append({
+                            "field": "documentation.description",
+                            "action": "improve",
+                            "reason": f"Description quality issue: {issue}",
+                        })
                     self._logger.debug(
-                        f"Applying {len(validation.corrections_applied)} corrections"
+                        f"Description quality issues: {validation.description_quality.issues}"
+                    )
+
+                # If we have corrections (explicit or from quality issues), apply them
+                if all_corrections and retries < max_retries:
+                    self._logger.debug(
+                        f"Applying {len(all_corrections)} corrections (including quality issues)"
                     )
                     # Update documenter input with corrections for next attempt
-                    documenter_input.corrections = [
-                        {
-                            "field": c.field,
-                            "action": c.action,
-                            "reason": c.reason,
-                        }
-                        for c in validation.corrections_applied
-                    ]
+                    documenter_input.corrections = all_corrections
                     retries += 1
                     continue
 
@@ -1517,6 +1533,13 @@ class ConcreteValidatorAgent(ValidatorAgent):
             false_callers=cg_data.get("false_callers", []),
         )
 
+        # Parse description quality
+        dq_data = data.get("description_quality", {})
+        description_quality = DescriptionQuality(
+            score=dq_data.get("score", 1.0),
+            issues=dq_data.get("issues", []),
+        )
+
         # Parse corrections
         corrections = [
             CorrectionApplied(
@@ -1542,6 +1565,7 @@ class ConcreteValidatorAgent(ValidatorAgent):
             validation_result=status,
             completeness=completeness,
             call_graph_accuracy=call_graph_accuracy,
+            description_quality=description_quality,
             corrections_applied=corrections,
             metadata=metadata,
         )
@@ -1557,6 +1581,7 @@ class ConcreteValidatorAgent(ValidatorAgent):
             validation_result=ValidationStatus.WARNING,
             completeness=CompletenessCheck(),
             call_graph_accuracy=CallGraphAccuracy(),
+            description_quality=DescriptionQuality(),
             corrections_applied=[],
             metadata=ValidatorMetadata(
                 agent_id=self._config.agent_id,
