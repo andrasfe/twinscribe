@@ -296,6 +296,10 @@ class StreamCallGraphComparison(BaseModel):
         default_factory=dict,
         description="Component ID -> edges only in Stream B",
     )
+    common_edges: dict[str, set[tuple[str, str]]] = Field(
+        default_factory=dict,
+        description="Component ID -> edges found in both streams (consensus)",
+    )
     component_details: dict[str, dict] = Field(
         default_factory=dict,
         description="Per-component comparison details",
@@ -351,6 +355,11 @@ class StreamCallGraphComparison(BaseModel):
             a_edges = a_callees | a_callers
             b_edges = b_callees | b_callers
 
+            # Always compute common edges (consensus)
+            common = a_edges & b_edges
+            if common:
+                result.common_edges[comp_id] = common
+
             if a_edges == b_edges:
                 result.identical_components += 1
                 result.component_details[comp_id] = {
@@ -373,7 +382,7 @@ class StreamCallGraphComparison(BaseModel):
                     "b_edges": len(b_edges),
                     "only_in_a": len(only_a),
                     "only_in_b": len(only_b),
-                    "matching": len(a_edges & b_edges),
+                    "matching": len(common),
                 }
 
         return result
@@ -398,6 +407,93 @@ class StreamCallGraphComparison(BaseModel):
                     )
 
         return "\n".join(lines)
+
+    def export_call_graphs(self, output_dir: str, iteration: int = 1) -> dict[str, str]:
+        """Export consensus call graph and discrepancies to JSON files.
+
+        Args:
+            output_dir: Directory to write output files
+            iteration: Current iteration number for filename
+
+        Returns:
+            Dict mapping output type to file path
+        """
+        import json
+        from pathlib import Path
+        from datetime import datetime
+
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        # Flatten common edges into a single list
+        all_consensus_edges = []
+        for comp_id, edges in self.common_edges.items():
+            for caller, callee in edges:
+                all_consensus_edges.append({
+                    "caller": caller,
+                    "callee": callee,
+                    "component": comp_id,
+                })
+
+        # Consensus call graph (edges both streams agree on)
+        consensus_data = {
+            "type": "consensus_call_graph",
+            "iteration": iteration,
+            "timestamp": datetime.now().isoformat(),
+            "statistics": {
+                "total_components": self.total_components,
+                "identical_components": self.identical_components,
+                "differing_components": self.differing_components,
+                "agreement_rate": self.agreement_rate,
+                "total_consensus_edges": len(all_consensus_edges),
+            },
+            "edges": all_consensus_edges,
+        }
+
+        consensus_file = output_path / f"consensus_call_graph_iter{iteration}.json"
+        with open(consensus_file, "w") as f:
+            json.dump(consensus_data, f, indent=2)
+
+        # Discrepancies (edges only in A or only in B)
+        discrepancies_a = []
+        for comp_id, edges in self.only_in_a.items():
+            for caller, callee in edges:
+                discrepancies_a.append({
+                    "caller": caller,
+                    "callee": callee,
+                    "component": comp_id,
+                })
+
+        discrepancies_b = []
+        for comp_id, edges in self.only_in_b.items():
+            for caller, callee in edges:
+                discrepancies_b.append({
+                    "caller": caller,
+                    "callee": callee,
+                    "component": comp_id,
+                })
+
+        discrepancies_data = {
+            "type": "call_graph_discrepancies",
+            "iteration": iteration,
+            "timestamp": datetime.now().isoformat(),
+            "statistics": {
+                "edges_only_in_a": len(discrepancies_a),
+                "edges_only_in_b": len(discrepancies_b),
+                "components_with_discrepancies": self.differing_components,
+            },
+            "only_in_stream_a": discrepancies_a,
+            "only_in_stream_b": discrepancies_b,
+        }
+
+        discrepancies_file = output_path / f"call_graph_discrepancies_iter{iteration}.json"
+        with open(discrepancies_file, "w") as f:
+            json.dump(discrepancies_data, f, indent=2)
+
+        return {
+            "consensus": str(consensus_file),
+            "discrepancies": str(discrepancies_file),
+        }
 
     def check_convergence(
         self,
