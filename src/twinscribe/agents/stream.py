@@ -2161,15 +2161,24 @@ class ConcreteValidatorAgent(ValidatorAgent):
         def extract_partial_validation(text: str) -> dict:
             """Extract validation data from malformed JSON using regex."""
             result = {}
-            # Try to extract validation_result
+            # Try to extract validation_result (both singular and plural forms)
             status_match = re.search(r'"validation_result"\s*:\s*"([^"]*)"', text)
             if status_match:
                 result["validation_result"] = status_match.group(1)
-            # Try to extract scores
+            # Try to extract scores - handle both flat and nested structures
+            # Matches: "description_quality": { ... "score": 9 ...
+            # Or: "score": 9 anywhere near the field name
             for field in ["completeness", "call_graph_accuracy", "description_quality"]:
-                score_match = re.search(rf'"{field}"[^{{]*"score"\s*:\s*([0-9.]+)', text)
+                # Try direct score after field name
+                score_match = re.search(rf'"{field}"[^{{]*\{{\s*[^}}]*"score"\s*:\s*([0-9.]+)', text)
                 if score_match:
                     result[field] = {"score": float(score_match.group(1))}
+                else:
+                    # Try simpler pattern - just field followed by score somewhere
+                    score_match = re.search(rf'"{field}"[^}}]*?"score"\s*:\s*([0-9.]+)', text)
+                    if score_match:
+                        result[field] = {"score": float(score_match.group(1))}
+            # If we found at least some scores, return result
             return result if result else None
 
         def safe_json_parse(text: str) -> dict | None:
@@ -2219,6 +2228,19 @@ class ConcreteValidatorAgent(ValidatorAgent):
                 return self._create_fallback_result(component_id, token_count)
         elif isinstance(data, (str, int, float, bool)):
             data = {}
+
+        # Handle nested "validation_results" structure (some LLMs wrap everything in this)
+        # Expected: {"validation_result": "pass", "completeness": {...}, ...}
+        # Some LLMs: {"validation_results": {"completeness": {...}, ...}}
+        if "validation_results" in data and isinstance(data["validation_results"], dict):
+            nested = data["validation_results"]
+            # Flatten nested structure to top level
+            for key in ["completeness", "call_graph_accuracy", "description_quality"]:
+                if key in nested and key not in data:
+                    data[key] = nested[key]
+            # Also check for validation_result inside nested structure
+            if "validation_result" in nested and "validation_result" not in data:
+                data["validation_result"] = nested["validation_result"]
 
         # Parse validation status - normalize common LLM variations
         status_str = ensure_string(data.get("validation_result"), "warning").lower().strip()

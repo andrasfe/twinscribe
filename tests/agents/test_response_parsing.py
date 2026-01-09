@@ -717,6 +717,40 @@ class TestValidatorEdgeCases:
         # Content should be preserved
         assert "summary" in result.description_quality.issues[0].lower() or "redundant" in result.description_quality.issues[0].lower()
 
+    def test_nested_validation_results_structure(self, validator_config):
+        """Handle LLMs that wrap everything in 'validation_results' (plural).
+
+        Some LLMs return:
+        {"validation_results": {"description_quality": {...}}}
+        instead of:
+        {"description_quality": {...}}
+        """
+        agent = ConcreteValidatorAgent(validator_config)
+
+        response = json.dumps({
+            "component_id": "test.Component",
+            "validation_results": {
+                "description_quality": {
+                    "score": 9,
+                    "issues": [],
+                    "assessment": "Good documentation",
+                },
+                "completeness": {
+                    "score": 8,
+                },
+                "call_graph_accuracy": {
+                    "score": 10,
+                },
+            },
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        # Should extract scores from nested structure
+        assert result.description_quality.score == 0.9  # normalized from 9
+        assert result.completeness.score == 0.8  # normalized from 8
+        assert result.call_graph_accuracy.score == 1.0  # normalized from 10
+
 
 class TestParameterNameFix:
     """Tests for fixing swapped parameter name/description."""
