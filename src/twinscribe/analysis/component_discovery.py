@@ -330,19 +330,16 @@ class ComponentDiscovery:
             "*/.venv/*",
             "*/.*/*",
         ]
-        # Directories to always exclude (substring match)
+        # Directories to always exclude (exact match on path component)
         self._exclude_dirs = [
-            ".venv",
             "venv",
             "__pycache__",
-            ".git",
-            ".tox",
             "node_modules",
             "site-packages",
-            ".eggs",
             "build",
             "dist",
         ]
+        # Also exclude any directory starting with '.'
         self._include_private = include_private
 
     async def discover(
@@ -430,7 +427,11 @@ class ComponentDiscovery:
                 # Early skip for excluded directories (before adding to set)
                 try:
                     rel_parts = file_path.relative_to(self._codebase_path).parts
+                    # Skip if any path component is in exclude list
                     if any(exc_dir in rel_parts for exc_dir in self._exclude_dirs):
+                        continue
+                    # Skip if any path component starts with '.' (hidden dirs)
+                    if any(part.startswith(".") for part in rel_parts):
                         continue
                 except ValueError:
                     pass
@@ -447,10 +448,13 @@ class ComponentDiscovery:
             # Check fnmatch patterns
             excluded = any(fnmatch.fnmatch(rel_path, exc) for exc in self._exclude_patterns)
 
-            # Also check if path contains any excluded directory
+            # Also check if path contains any excluded directory or hidden dir
             if not excluded:
                 path_parts = rel_path.split("/")
-                excluded = any(exc_dir in path_parts for exc_dir in self._exclude_dirs)
+                excluded = (
+                    any(exc_dir in path_parts for exc_dir in self._exclude_dirs)
+                    or any(part.startswith(".") for part in path_parts)
+                )
 
             if not excluded and file_path.is_file():
                 filtered.append(file_path)
