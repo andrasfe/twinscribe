@@ -8,9 +8,14 @@ import json
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from twinscribe.agents.stream import DocumentationStream
+    from twinscribe.beads.manager import BeadsLifecycleManager
+    from twinscribe.orchestrator.orchestrator import DualStreamOrchestrator
 
 
 class Checkpoint(BaseModel):

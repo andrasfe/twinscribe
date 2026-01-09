@@ -451,9 +451,8 @@ class ComponentDiscovery:
             # Also check if path contains any excluded directory or hidden dir
             if not excluded:
                 path_parts = rel_path.split("/")
-                excluded = (
-                    any(exc_dir in path_parts for exc_dir in self._exclude_dirs)
-                    or any(part.startswith(".") for part in path_parts)
+                excluded = any(exc_dir in path_parts for exc_dir in self._exclude_dirs) or any(
+                    part.startswith(".") for part in path_parts
                 )
 
             if not excluded and file_path.is_file():

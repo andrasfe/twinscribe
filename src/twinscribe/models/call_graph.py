@@ -14,6 +14,8 @@ from twinscribe.models.base import CallType
 
 if TYPE_CHECKING:
     from twinscribe.models.convergence import ConvergenceCriteria, ConvergenceStatus
+    from twinscribe.models.documentation import DocumentationOutput
+    from twinscribe.models.feedback import StreamFeedback
 
 
 class CallEdge(BaseModel):
@@ -286,7 +288,9 @@ class StreamCallGraphComparison(BaseModel):
     """
 
     total_components: int = Field(default=0, description="Total components compared")
-    identical_components: int = Field(default=0, description="Components with identical call graphs")
+    identical_components: int = Field(
+        default=0, description="Components with identical call graphs"
+    )
     differing_components: int = Field(default=0, description="Components with differences")
     only_in_a: dict[str, set[tuple[str, str]]] = Field(
         default_factory=dict,
@@ -335,7 +339,6 @@ class StreamCallGraphComparison(BaseModel):
             StreamCallGraphComparison with detailed comparison results
         """
         # Import here to avoid circular dependency
-        from twinscribe.models.documentation import DocumentationOutput
 
         # Get common components
         common_ids = set(stream_a_outputs.keys()) & set(stream_b_outputs.keys())
@@ -390,14 +393,14 @@ class StreamCallGraphComparison(BaseModel):
     def get_summary(self) -> str:
         """Get a human-readable summary of the comparison."""
         lines = [
-            f"Stream A vs B Call Graph Comparison:",
+            "Stream A vs B Call Graph Comparison:",
             f"  Total components: {self.total_components}",
             f"  Identical: {self.identical_components} ({self.agreement_rate:.1%})",
             f"  Different: {self.differing_components}",
         ]
 
         if self.differing_components > 0:
-            lines.append(f"  Components with differences:")
+            lines.append("  Components with differences:")
             for comp_id, details in self.component_details.items():
                 if details["status"] == "different":
                     lines.append(
@@ -419,8 +422,8 @@ class StreamCallGraphComparison(BaseModel):
             Dict mapping output type to file path
         """
         import json
-        from pathlib import Path
         from datetime import datetime
+        from pathlib import Path
 
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
@@ -429,11 +432,13 @@ class StreamCallGraphComparison(BaseModel):
         all_consensus_edges = []
         for comp_id, edges in self.common_edges.items():
             for caller, callee in edges:
-                all_consensus_edges.append({
-                    "caller": caller,
-                    "callee": callee,
-                    "component": comp_id,
-                })
+                all_consensus_edges.append(
+                    {
+                        "caller": caller,
+                        "callee": callee,
+                        "component": comp_id,
+                    }
+                )
 
         # Consensus call graph (edges both streams agree on)
         consensus_data = {
@@ -458,20 +463,24 @@ class StreamCallGraphComparison(BaseModel):
         discrepancies_a = []
         for comp_id, edges in self.only_in_a.items():
             for caller, callee in edges:
-                discrepancies_a.append({
-                    "caller": caller,
-                    "callee": callee,
-                    "component": comp_id,
-                })
+                discrepancies_a.append(
+                    {
+                        "caller": caller,
+                        "callee": callee,
+                        "component": comp_id,
+                    }
+                )
 
         discrepancies_b = []
         for comp_id, edges in self.only_in_b.items():
             for caller, callee in edges:
-                discrepancies_b.append({
-                    "caller": caller,
-                    "callee": callee,
-                    "component": comp_id,
-                })
+                discrepancies_b.append(
+                    {
+                        "caller": caller,
+                        "callee": callee,
+                        "component": comp_id,
+                    }
+                )
 
         discrepancies_data = {
             "type": "call_graph_discrepancies",

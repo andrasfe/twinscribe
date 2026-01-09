@@ -24,7 +24,6 @@ from twinscribe.config import (
     reset_environment,
 )
 
-
 # List of ALL environment variables that may affect config tests
 # This includes both .env vars and TWINSCRIBE_* overrides
 # IMPORTANT: ALL vars in ENV_VAR_OVERRIDES must be cleared to prevent
@@ -70,7 +69,6 @@ def reset_global_config(monkeypatch):
     2. Values loaded from .env file
     """
     import twinscribe.config.environment as env_module
-    import twinscribe.config.models as models_module
 
     # Reset environment state
     reset_config()

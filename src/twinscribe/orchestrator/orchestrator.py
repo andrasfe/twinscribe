@@ -22,11 +22,20 @@ from typing import TYPE_CHECKING, Any, Optional
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from twinscribe.models.call_graph import StreamCallGraphComparison
-    from twinscribe.models.convergence import ConvergenceResult, ConvergenceStatus
+    from twinscribe.agents.comparator_impl import ComparatorAgent
+    from twinscribe.agents.stream import DocumentationStream
+    from twinscribe.analysis.oracle import StaticAnalysisOracle
+    from twinscribe.beads.manager import BeadsLifecycleManager
+    from twinscribe.beads.models import TicketResolution
+    from twinscribe.models.call_graph import CallGraph, StreamCallGraphComparison
+    from twinscribe.models.comparison import ComparisonResult, Discrepancy
+    from twinscribe.models.components import Component
+    from twinscribe.models.convergence import ConvergenceReport, ConvergenceStatus
     from twinscribe.models.documentation import DocumentationOutput
     from twinscribe.models.feedback import StreamFeedback
+    from twinscribe.models.output import ComponentFinalDoc, DocumentationPackage
     from twinscribe.orchestrator.checkpoint import CheckpointManager, CheckpointState
+    from twinscribe.orchestrator.metrics import RunMetrics
 
 from twinscribe.models.convergence import ConvergenceCriteria
 
@@ -74,7 +83,9 @@ class OrchestratorConfig(BaseModel):
     )
     parallel_components: int = Field(default=10, ge=1, le=100)
     parallel_streams: bool = Field(default=False, description="Run streams in parallel")
-    rate_limit_delay: float = Field(default=0.5, ge=0, description="Delay between API calls in seconds")
+    rate_limit_delay: float = Field(
+        default=0.5, ge=0, description="Delay between API calls in seconds"
+    )
     exclude_component_patterns: list[str] = Field(
         default_factory=lambda: [
             ".venv.",
@@ -89,7 +100,9 @@ class OrchestratorConfig(BaseModel):
     beads_timeout_hours: int = Field(default=48, ge=0)
     skip_validation: bool = Field(default=False)
     dry_run: bool = Field(default=False)
-    continue_on_error: bool = Field(default=False, description="Continue if component fails (fail-fast by default)")
+    continue_on_error: bool = Field(
+        default=False, description="Continue if component fails (fail-fast by default)"
+    )
     convergence_criteria: "ConvergenceCriteria" = Field(
         default_factory=lambda: ConvergenceCriteria(),
         description="Criteria for determining when dual-stream consensus is achieved",
@@ -228,14 +241,14 @@ class DualStreamOrchestrator:
         # Call graph feedback for inter-stream communication
         # These are populated after call graph comparison and passed to streams
         # on the next iteration to help them converge
-        self._feedback_for_stream_a: "StreamFeedback | None" = None
-        self._feedback_for_stream_b: "StreamFeedback | None" = None
+        self._feedback_for_stream_a: StreamFeedback | None = None
+        self._feedback_for_stream_b: StreamFeedback | None = None
 
         # Convergence tracking for call graphs
         # Tracks agreement rates per iteration for reporting
         self._convergence_history: list[float] = []
-        self._latest_convergence_status: "ConvergenceStatus | None" = None
-        self._latest_call_graph_comparison: "StreamCallGraphComparison | None" = None
+        self._latest_convergence_status: ConvergenceStatus | None = None
+        self._latest_call_graph_comparison: StreamCallGraphComparison | None = None
 
     @property
     def config(self) -> OrchestratorConfig:
@@ -357,10 +370,7 @@ class DualStreamOrchestrator:
                             f"Failed to parse output for {component_id} ({stream_id}): {e}"
                         )
 
-        logger.info(
-            f"Loaded {loaded_a} previous outputs for Stream A, "
-            f"{loaded_b} for Stream B"
-        )
+        logger.info(f"Loaded {loaded_a} previous outputs for Stream A, {loaded_b} for Stream B")
 
     def _get_unprocessed_components(
         self,
@@ -423,6 +433,7 @@ class DualStreamOrchestrator:
             # Record error to checkpoint BEFORE raising for resume capability
             if self._checkpoint_manager:
                 import traceback
+
                 tb = traceback.format_exc()
                 self._checkpoint_manager.record_error(
                     phase=self._state.phase.value,
@@ -810,7 +821,10 @@ class DualStreamOrchestrator:
             if discrepancy.resolution_source == ResolutionSource.GROUND_TRUTH_HINT:
                 # Hint-based suggestion - may still need human review if low confidence
                 resolved_by_hint += 1
-                if discrepancy.confidence >= self._comparator.comparator_config.confidence_threshold:
+                if (
+                    discrepancy.confidence
+                    >= self._comparator.comparator_config.confidence_threshold
+                ):
                     # High enough confidence to apply hint-based resolution
                     await self._apply_hint_based_resolution(discrepancy)
                     continue
@@ -881,8 +895,7 @@ class DualStreamOrchestrator:
         """
         # Filter out excluded components
         filtered = [
-            c for c in self._components
-            if not self._should_exclude_component(c.component_id)
+            c for c in self._components if not self._should_exclude_component(c.component_id)
         ]
 
         # If resuming, filter out already-processed components
@@ -898,10 +911,7 @@ class DualStreamOrchestrator:
                 logger.info(
                     f"Resuming: skipping {len(fully_processed)} already-processed components"
                 )
-                filtered = [
-                    c for c in filtered
-                    if c.component_id not in fully_processed
-                ]
+                filtered = [c for c in filtered if c.component_id not in fully_processed]
 
         if self._state.iteration == 1:
             return filtered
@@ -911,10 +921,7 @@ class DualStreamOrchestrator:
         if self._latest_convergence_status is not None:
             divergent_ids = set(self._latest_convergence_status.divergent_components)
             if divergent_ids:
-                divergent_components = [
-                    c for c in filtered
-                    if c.component_id in divergent_ids
-                ]
+                divergent_components = [c for c in filtered if c.component_id in divergent_ids]
                 logger.info(
                     f"Iteration {self._state.iteration}: re-processing "
                     f"{len(divergent_components)} divergent components (out of {len(filtered)} total)"
@@ -1082,15 +1089,17 @@ class DualStreamOrchestrator:
             # Build iteration history
             iteration_history: list[dict[str, float | int]] = []
             for i, rate in enumerate(self._convergence_history, start=1):
-                iteration_history.append({
-                    "iteration": i,
-                    "agreement_rate": rate,
-                    "divergent_count": (
-                        len(self._latest_convergence_status.divergent_components)
-                        if self._latest_convergence_status
-                        else 0
-                    ),
-                })
+                iteration_history.append(
+                    {
+                        "iteration": i,
+                        "agreement_rate": rate,
+                        "divergent_count": (
+                            len(self._latest_convergence_status.divergent_components)
+                            if self._latest_convergence_status
+                            else 0
+                        ),
+                    }
+                )
 
             # Create template data
             data = DivergentComponentTemplateData(

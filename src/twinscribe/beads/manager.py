@@ -350,9 +350,7 @@ class BeadsLifecycleManager:
             BeadsError: If ticket creation fails
         """
         # Render ticket content
-        summary, description = self._template_engine.render_divergent_component(
-            data, template_name
-        )
+        summary, description = self._template_engine.render_divergent_component(data, template_name)
 
         # Get labels and priority
         labels = self._template_engine.get_labels(data, template_name)

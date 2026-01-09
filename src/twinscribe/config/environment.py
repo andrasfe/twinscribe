@@ -13,7 +13,6 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, SecretStr
 
-
 # Track whether dotenv has been loaded
 _dotenv_loaded: bool = False
 

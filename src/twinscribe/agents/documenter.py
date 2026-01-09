@@ -317,8 +317,12 @@ CRITICAL REQUIREMENTS FOR call_graph:
                 )
 
         if input_data.static_analysis_hints:
-            callees = input_data.static_analysis_hints.get_callees(input_data.component.component_id)
-            callers = input_data.static_analysis_hints.get_callers(input_data.component.component_id)
+            callees = input_data.static_analysis_hints.get_callees(
+                input_data.component.component_id
+            )
+            callers = input_data.static_analysis_hints.get_callers(
+                input_data.component.component_id
+            )
             lines.extend(
                 [
                     "## Static Analysis Hints (verify against source code)",

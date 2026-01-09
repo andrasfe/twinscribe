@@ -8,7 +8,6 @@ IMPORTANT: Environment variables from .env are loaded at module import time
 to ensure they are available for Pydantic model defaults.
 """
 
-import os
 from enum import Enum
 from pathlib import Path
 from typing import Any

@@ -1532,20 +1532,24 @@ class TestOrchestratorCallGraphRefinement:
             mock_output=stream_a_output,
         )
         # Monkey-patch to track feedback
-        original_set_feedback_a = getattr(stream_a, 'set_call_graph_feedback', lambda x: None)
+        original_set_feedback_a = getattr(stream_a, "set_call_graph_feedback", lambda x: None)
+
         def track_feedback_a(feedback):
             feedback_received_a.append(feedback)
             return original_set_feedback_a(feedback)
+
         stream_a.set_call_graph_feedback = track_feedback_a
 
         stream_b = MockDocumentationStream(
             config=stream_b_config,
             mock_output=stream_b_output,
         )
-        original_set_feedback_b = getattr(stream_b, 'set_call_graph_feedback', lambda x: None)
+        original_set_feedback_b = getattr(stream_b, "set_call_graph_feedback", lambda x: None)
+
         def track_feedback_b(feedback):
             feedback_received_b.append(feedback)
             return original_set_feedback_b(feedback)
+
         stream_b.set_call_graph_feedback = track_feedback_b
 
         # First iteration: discrepancy, generates feedback
@@ -1641,9 +1645,11 @@ class TestOrchestratorCallGraphRefinement:
             mock_output=stream_a_output,
         )
         original_process_a = stream_a.process
+
         async def tracking_process_a(components, source_code_map, ground_truth):
             process_call_counts_a.append(len(components))
             return await original_process_a(components, source_code_map, ground_truth)
+
         stream_a.process = tracking_process_a
 
         stream_b = MockDocumentationStream(
@@ -1651,9 +1657,11 @@ class TestOrchestratorCallGraphRefinement:
             mock_output=stream_b_output,
         )
         original_process_b = stream_b.process
+
         async def tracking_process_b(components, source_code_map, ground_truth):
             process_call_counts_b.append(len(components))
             return await original_process_b(components, source_code_map, ground_truth)
+
         stream_b.process = tracking_process_b
 
         # Converges on first iteration

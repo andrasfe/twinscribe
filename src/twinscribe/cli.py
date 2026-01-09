@@ -8,6 +8,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
@@ -16,6 +17,9 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from rich.table import Table
 
 from twinscribe.version import __version__
+
+if TYPE_CHECKING:
+    from twinscribe.orchestrator.checkpoint import CheckpointState
 
 console = Console()
 
@@ -270,7 +274,9 @@ def _handle_resume(
 
             console.print(resume_table)
             console.print()
-            console.print("[dim]Resuming most recent run. Use --resume-run-id to select a specific run.[/dim]")
+            console.print(
+                "[dim]Resuming most recent run. Use --resume-run-id to select a specific run.[/dim]"
+            )
             selected_run = resumable_runs[0]
 
     # Load checkpoint and build state
@@ -419,13 +425,12 @@ async def _run_document_pipeline(
             except Exception as e:
                 # Static analysis failure is non-fatal - log warning and use null oracle
                 progress.update(task, description="Static analysis failed")
-                console.print(
-                    f"[yellow]Warning:[/yellow] Static analysis failed: {e}"
-                )
+                console.print(f"[yellow]Warning:[/yellow] Static analysis failed: {e}")
                 console.print(
                     "[dim]Continuing with dual-stream consensus as sole source of truth.[/dim]"
                 )
                 from twinscribe.analysis.null_oracle import create_null_oracle
+
                 oracle = create_null_oracle(codebase_path)
                 await oracle.initialize()
 
@@ -443,6 +448,7 @@ async def _run_document_pipeline(
             "Dual-stream consensus will be the sole source of truth."
         )
         from twinscribe.analysis.null_oracle import create_null_oracle
+
         oracle = create_null_oracle(codebase_path)
         await oracle.initialize()
 
@@ -510,11 +516,15 @@ async def _run_document_pipeline(
                 if state.phase == OrchestratorPhase.DISCOVERING:
                     console.print(f"[cyan]→ {phase_name}...[/cyan]")
                 elif state.phase == OrchestratorPhase.DOCUMENTING:
-                    console.print(f"[cyan]→ {phase_name} ({state.total_components} components)...[/cyan]")
+                    console.print(
+                        f"[cyan]→ {phase_name} ({state.total_components} components)...[/cyan]"
+                    )
                 elif state.phase == OrchestratorPhase.COMPARING:
                     console.print(f"[cyan]→ {phase_name}...[/cyan]")
                 elif state.phase == OrchestratorPhase.RESOLVING:
-                    console.print(f"[cyan]→ {phase_name} ({state.pending_discrepancies} discrepancies)...[/cyan]")
+                    console.print(
+                        f"[cyan]→ {phase_name} ({state.pending_discrepancies} discrepancies)...[/cyan]"
+                    )
                 elif state.phase == OrchestratorPhase.FINALIZING:
                     console.print(f"[cyan]→ {phase_name}...[/cyan]")
                 elif state.phase == OrchestratorPhase.COMPLETED:
@@ -603,17 +613,23 @@ async def _run_document_pipeline(
             console.print(f"[dim]Resuming run: {checkpoint_state.run_id}[/dim]")
         else:
             checkpoint_manager = CheckpointManager(output_dir=output_dir)
-            checkpoint_manager.record_run_start(config={
-                "codebase_path": codebase_path,
-                "language": language,
-                "max_iterations": max_iterations,
-                "parallel": parallel,
-                "dry_run": dry_run,
-            })
+            checkpoint_manager.record_run_start(
+                config={
+                    "codebase_path": codebase_path,
+                    "language": language,
+                    "max_iterations": max_iterations,
+                    "parallel": parallel,
+                    "dry_run": dry_run,
+                }
+            )
 
         # Create streams with checkpoint manager
-        stream_a = ConcreteDocumentationStream(stream_a_config, checkpoint_manager=checkpoint_manager)
-        stream_b = ConcreteDocumentationStream(stream_b_config, checkpoint_manager=checkpoint_manager)
+        stream_a = ConcreteDocumentationStream(
+            stream_a_config, checkpoint_manager=checkpoint_manager
+        )
+        stream_b = ConcreteDocumentationStream(
+            stream_b_config, checkpoint_manager=checkpoint_manager
+        )
 
         # Create comparator
         comparator_config = ComparatorConfig(
@@ -660,7 +676,9 @@ async def _run_document_pipeline(
             TaskProgressColumn(),
             console=console,
         ) as progress:
-            task_desc = "Resuming documentation..." if checkpoint_state else "Documenting codebase..."
+            task_desc = (
+                "Resuming documentation..." if checkpoint_state else "Documenting codebase..."
+            )
             task = progress.add_task(task_desc, total=max_iterations)
 
             try:

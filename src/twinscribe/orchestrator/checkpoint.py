@@ -381,9 +381,7 @@ class CheckpointManager:
             components: List of discovered components (with component_id attribute)
             processing_order: Topological processing order
         """
-        component_ids = [
-            getattr(c, "component_id", str(c)) for c in components
-        ]
+        component_ids = [getattr(c, "component_id", str(c)) for c in components]
 
         event = DiscoveryCompleteEvent(
             run_id=self._run_id,
@@ -424,9 +422,7 @@ class CheckpointManager:
         if output_path is None:
             safe_id = _sanitize_component_id(component_id)
             stream_suffix = stream_id.lower()
-            output_path = str(
-                self._component_dir / f"{safe_id}.{stream_suffix}.json"
-            )
+            output_path = str(self._component_dir / f"{safe_id}.{stream_suffix}.json")
 
         # Save component output
         self._save_component_output(output, output_path)
@@ -767,17 +763,19 @@ class CheckpointManager:
                 # Total unique components across both streams
                 all_components = processed_components["A"] | processed_components["B"]
 
-                resumable.append({
-                    "run_id": run_id,
-                    "checkpoint_path": str(checkpoint_file),
-                    "started_at": started_at,
-                    "last_event_at": last_event_at,
-                    "components_processed": len(all_components),
-                    "stream_a_processed": len(processed_components["A"]),
-                    "stream_b_processed": len(processed_components["B"]),
-                    "last_iteration": last_iteration,
-                    "config": run_start.get("config", {}),
-                })
+                resumable.append(
+                    {
+                        "run_id": run_id,
+                        "checkpoint_path": str(checkpoint_file),
+                        "started_at": started_at,
+                        "last_event_at": last_event_at,
+                        "components_processed": len(all_components),
+                        "stream_a_processed": len(processed_components["A"]),
+                        "stream_b_processed": len(processed_components["B"]),
+                        "last_iteration": last_iteration,
+                        "config": run_start.get("config", {}),
+                    }
+                )
 
             except (OSError, json.JSONDecodeError) as e:
                 logger.warning(f"Failed to read checkpoint file {checkpoint_file}: {e}")
@@ -883,7 +881,7 @@ class CheckpointState(BaseModel):
         return self.component_outputs.get(key)
 
     @classmethod
-    def build_state(cls, checkpoint_manager: "CheckpointManager") -> "CheckpointState":
+    def build_state(cls, checkpoint_manager: CheckpointManager) -> CheckpointState:
         """Build checkpoint state from a checkpoint manager.
 
         Reconstructs the state by replaying all events from the checkpoint
@@ -948,21 +946,22 @@ class CheckpointState(BaseModel):
                 current_iteration = last_iteration + 1
 
             elif event_type == "error":
-                errors.append({
-                    "phase": event.get("phase", ""),
-                    "component_id": event.get("component_id"),
-                    "stream": event.get("stream"),
-                    "error": event.get("error", ""),
-                    "error_type": event.get("error_type", ""),
-                })
+                errors.append(
+                    {
+                        "phase": event.get("phase", ""),
+                        "component_id": event.get("component_id"),
+                        "stream": event.get("stream"),
+                        "error": event.get("error", ""),
+                        "error_type": event.get("error_type", ""),
+                    }
+                )
 
             elif event_type == "run_complete":
                 is_complete = True
 
         # Convert sets to lists for Pydantic serialization
         processed_lists = {
-            stream: list(comp_ids)
-            for stream, comp_ids in processed_components.items()
+            stream: list(comp_ids) for stream, comp_ids in processed_components.items()
         }
 
         return cls(

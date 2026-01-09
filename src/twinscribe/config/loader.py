@@ -673,6 +673,7 @@ def create_default_config(codebase_path: str) -> TwinscribeConfig:
     config_dict = loader._clean_none_values(config_dict)
 
     from twinscribe.config.models import TwinscribeConfig as TsConfig
+
     return TsConfig(**config_dict)
 
 

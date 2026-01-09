@@ -757,36 +757,36 @@ class ConcreteComparatorAgent(ComparatorAgent):
                 if not text or not text.strip():
                     return "{}"
                 # Remove JS comments
-                text = re.sub(r'//[^\n]*\n', '\n', text)
-                text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+                text = re.sub(r"//[^\n]*\n", "\n", text)
+                text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
                 # Single quotes to double
                 text = re.sub(r"(?<![a-zA-Z])'([^']*)'(?![a-zA-Z])", r'"\1"', text)
                 # NaN/Infinity
-                text = re.sub(r'\bNaN\b', 'null', text)
-                text = re.sub(r'\bInfinity\b', '999999999', text)
-                text = re.sub(r'-Infinity\b', '-999999999', text)
+                text = re.sub(r"\bNaN\b", "null", text)
+                text = re.sub(r"\bInfinity\b", "999999999", text)
+                text = re.sub(r"-Infinity\b", "-999999999", text)
                 # Trailing commas
-                text = re.sub(r',\s*([}\]])', r'\1', text)
+                text = re.sub(r",\s*([}\]])", r"\1", text)
                 # Missing commas
                 text = re.sub(r'"\s+(")', r'", \1', text)
-                text = re.sub(r'}\s+{', r'}, {', text)
+                text = re.sub(r"}\s+{", r"}, {", text)
                 # Unquoted keys
-                text = re.sub(r'{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'{"\1":', text)
-                text = re.sub(r',\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r',"\1":', text)
+                text = re.sub(r"{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:", r'{"\1":', text)
+                text = re.sub(r",\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:", r',"\1":', text)
                 # Python True/False/None
-                text = re.sub(r'\bTrue\b', 'true', text)
-                text = re.sub(r'\bFalse\b', 'false', text)
-                text = re.sub(r'\bNone\b', 'null', text)
+                text = re.sub(r"\bTrue\b", "true", text)
+                text = re.sub(r"\bFalse\b", "false", text)
+                text = re.sub(r"\bNone\b", "null", text)
                 return text
 
             def balance_braces(text: str) -> str:
                 """Balance unclosed braces/brackets."""
-                open_braces = text.count('{') - text.count('}')
-                open_brackets = text.count('[') - text.count(']')
+                open_braces = text.count("{") - text.count("}")
+                open_brackets = text.count("[") - text.count("]")
                 if open_braces > 0:
-                    text = text.rstrip() + '}' * open_braces
+                    text = text.rstrip() + "}" * open_braces
                 if open_brackets > 0:
-                    text = text.rstrip() + ']' * open_brackets
+                    text = text.rstrip() + "]" * open_brackets
                 return text
 
             def safe_json_parse(text: str) -> dict | None:
@@ -797,8 +797,12 @@ class ConcreteComparatorAgent(ComparatorAgent):
                     lambda t: json.loads(t),
                     lambda t: json.loads(try_fix_json(t)),
                     lambda t: json.loads(balance_braces(try_fix_json(t))),
-                    lambda t: json.loads(re.search(r'\{[\s\S]*\}', t).group()) if re.search(r'\{[\s\S]*\}', t) else None,
-                    lambda t: json.loads(try_fix_json(re.search(r'\{[\s\S]*\}', t).group())) if re.search(r'\{[\s\S]*\}', t) else None,
+                    lambda t: json.loads(re.search(r"\{[\s\S]*\}", t).group())
+                    if re.search(r"\{[\s\S]*\}", t)
+                    else None,
+                    lambda t: json.loads(try_fix_json(re.search(r"\{[\s\S]*\}", t).group()))
+                    if re.search(r"\{[\s\S]*\}", t)
+                    else None,
                 ]
                 for strategy in strategies:
                     try:
@@ -811,7 +815,9 @@ class ConcreteComparatorAgent(ComparatorAgent):
 
             result = safe_json_parse(response.content)
             if result is None:
-                logger.warning(f"Failed to parse comparator response for {component_id}, using empty discrepancies")
+                logger.warning(
+                    f"Failed to parse comparator response for {component_id}, using empty discrepancies"
+                )
                 return []
 
             discrepancies = []

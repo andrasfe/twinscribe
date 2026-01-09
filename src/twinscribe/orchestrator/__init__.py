@@ -32,6 +32,16 @@ Usage:
     result = await orchestrator.run()
 """
 
+from twinscribe.orchestrator.checkpoint import (
+    CheckpointEvent,
+    CheckpointManager,
+    ComponentDocumentedEvent,
+    DiscoveryCompleteEvent,
+    ErrorEvent,
+    IterationCompleteEvent,
+    RunCompleteEvent,
+    RunStartEvent,
+)
 from twinscribe.orchestrator.convergence import (
     BlockingDiscrepancyType,
     ConvergenceCheck,
@@ -51,21 +61,13 @@ from twinscribe.orchestrator.orchestrator import (
     OrchestratorState,
     ProgressCallback,
 )
-from twinscribe.orchestrator.checkpoint import (
-    CheckpointEvent,
-    CheckpointManager,
-    ComponentDocumentedEvent,
-    DiscoveryCompleteEvent,
-    ErrorEvent,
-    IterationCompleteEvent,
-    RunCompleteEvent,
-    RunStartEvent,
-)
 from twinscribe.orchestrator.state import (
     Checkpoint,
-    CheckpointManager as LegacyCheckpointManager,
     ProgressTracker,
     StateRecovery,
+)
+from twinscribe.orchestrator.state import (
+    CheckpointManager as LegacyCheckpointManager,
 )
 
 __all__ = [

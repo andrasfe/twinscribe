@@ -74,7 +74,9 @@ class CallGraphFeedback(BaseModel):
         lines = []
 
         if self.edges_only_in_other_stream:
-            edge_strs = [f"{caller}->{callee}" for caller, callee in self.edges_only_in_other_stream]
+            edge_strs = [
+                f"{caller}->{callee}" for caller, callee in self.edges_only_in_other_stream
+            ]
             lines.append(
                 f"Stream {self.other_stream_id} found these edges that you missed: "
                 f"{', '.join(edge_strs)}. Please verify and update if correct."
@@ -175,18 +177,13 @@ class StreamFeedback(BaseModel):
         Returns:
             List of component IDs with actionable feedback
         """
-        return [
-            feedback.component_id
-            for feedback in self.feedbacks
-            if feedback.has_feedback()
-        ]
+        return [feedback.component_id for feedback in self.feedbacks if feedback.has_feedback()]
 
     @property
     def total_edges_to_verify(self) -> int:
         """Total number of edges across all feedback that need verification."""
         return sum(
-            len(f.edges_only_in_other_stream) + len(f.edges_to_verify)
-            for f in self.feedbacks
+            len(f.edges_only_in_other_stream) + len(f.edges_to_verify) for f in self.feedbacks
         )
 
     @property

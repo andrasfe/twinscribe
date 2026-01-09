@@ -475,7 +475,7 @@ class ConcreteDocumentationStream(DocumentationStream):
         self,
         config: StreamConfig,
         progress_callback: StreamProgressCallback | None = None,
-        checkpoint_manager: "CheckpointManager | None" = None,
+        checkpoint_manager: CheckpointManager | None = None,
     ) -> None:
         """Initialize the concrete documentation stream.
 
@@ -579,8 +579,7 @@ class ConcreteDocumentationStream(DocumentationStream):
         # Only clear entries for components we're about to re-process
         components_to_process_ids = {c.component_id for c in components}
         self._processing_context = {
-            k: v for k, v in self._processing_context.items()
-            if k not in components_to_process_ids
+            k: v for k, v in self._processing_context.items() if k not in components_to_process_ids
         }
 
         # Initialize result
@@ -599,9 +598,7 @@ class ConcreteDocumentationStream(DocumentationStream):
             component_id = component.component_id
 
             # Log progress
-            self._logger.info(
-                f"{stream_name}: [{index + 1}/{total}] Processing {component_id}"
-            )
+            self._logger.info(f"{stream_name}: [{index + 1}/{total}] Processing {component_id}")
 
             # Notify progress callback
             if self._progress_callback:
@@ -698,6 +695,7 @@ class ConcreteDocumentationStream(DocumentationStream):
                 # This ensures checkpoint is saved for resume capability
                 if self._checkpoint_manager:
                     import traceback
+
                     tb = traceback.format_exc()
                     self._checkpoint_manager.record_error(
                         phase="documenting",
@@ -823,11 +821,13 @@ class ConcreteDocumentationStream(DocumentationStream):
                 # Add description quality issues as corrections if present
                 if validation.description_quality.has_issues:
                     for issue in validation.description_quality.issues:
-                        all_corrections.append({
-                            "field": "documentation.description",
-                            "action": "improve",
-                            "reason": f"Description quality issue: {issue}",
-                        })
+                        all_corrections.append(
+                            {
+                                "field": "documentation.description",
+                                "action": "improve",
+                                "reason": f"Description quality issue: {issue}",
+                            }
+                        )
                     self._logger.debug(
                         f"Description quality issues: {validation.description_quality.issues}"
                     )
@@ -1059,7 +1059,7 @@ class ConcreteDocumentationStream(DocumentationStream):
         """
         self._current_iteration = iteration
 
-    def set_checkpoint_manager(self, manager: "CheckpointManager") -> None:
+    def set_checkpoint_manager(self, manager: CheckpointManager) -> None:
         """Set the checkpoint manager for state persistence.
 
         Args:
@@ -1068,7 +1068,7 @@ class ConcreteDocumentationStream(DocumentationStream):
         self._checkpoint_manager = manager
 
     @property
-    def checkpoint_manager(self) -> "CheckpointManager | None":
+    def checkpoint_manager(self) -> CheckpointManager | None:
         """Get the checkpoint manager if set."""
         return self._checkpoint_manager
 
@@ -1274,7 +1274,15 @@ class ConcreteDocumenterAgent(DocumenterAgent):
                 return value
             if isinstance(value, dict):
                 # Extract meaningful content from dict
-                for key in ("description", "message", "text", "value", "reason", "content", "summary"):
+                for key in (
+                    "description",
+                    "message",
+                    "text",
+                    "value",
+                    "reason",
+                    "content",
+                    "summary",
+                ):
                     if key in value and value[key]:
                         return coerce_to_str(value[key])
                 # Join all non-empty values
@@ -1298,7 +1306,9 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             s = coerce_to_str(value)
             return [s] if s else []
 
-        def coerce_to_float(value: any, default: float = 0.0, min_val: float = None, max_val: float = None) -> float:
+        def coerce_to_float(
+            value: any, default: float = 0.0, min_val: float = None, max_val: float = None
+        ) -> float:
             """Convert ANY value to a float. Bulletproof."""
             if value is None:
                 return default
@@ -1306,12 +1316,24 @@ class ConcreteDocumenterAgent(DocumenterAgent):
                 result = float(value)
             elif isinstance(value, str):
                 score_map = {
-                    "very high": 0.95, "very_high": 0.95, "excellent": 0.95,
-                    "high": 0.85, "good": 0.85, "confident": 0.85,
-                    "medium": 0.7, "moderate": 0.7, "average": 0.7, "normal": 0.7,
-                    "low": 0.5, "poor": 0.5, "uncertain": 0.5,
-                    "very low": 0.3, "very_low": 0.3, "bad": 0.3,
-                    "none": 0.1, "zero": 0.0,
+                    "very high": 0.95,
+                    "very_high": 0.95,
+                    "excellent": 0.95,
+                    "high": 0.85,
+                    "good": 0.85,
+                    "confident": 0.85,
+                    "medium": 0.7,
+                    "moderate": 0.7,
+                    "average": 0.7,
+                    "normal": 0.7,
+                    "low": 0.5,
+                    "poor": 0.5,
+                    "uncertain": 0.5,
+                    "very low": 0.3,
+                    "very_low": 0.3,
+                    "bad": 0.3,
+                    "none": 0.1,
+                    "zero": 0.0,
                 }
                 cleaned = value.lower().strip()
                 if cleaned in score_map:
@@ -1332,7 +1354,11 @@ class ConcreteDocumenterAgent(DocumenterAgent):
                 return default
 
             # Normalize 0-10 scale to 0-1
-            if result > 1.0 and (min_val is None or min_val >= 0) and (max_val is None or max_val <= 1):
+            if (
+                result > 1.0
+                and (min_val is None or min_val >= 0)
+                and (max_val is None or max_val <= 1)
+            ):
                 result = result / 10.0
             if min_val is not None:
                 result = max(min_val, result)
@@ -1423,52 +1449,52 @@ class ConcreteDocumenterAgent(DocumenterAgent):
                 return "{}"
 
             # Remove JavaScript-style comments
-            text = re.sub(r'//[^\n]*\n', '\n', text)
-            text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+            text = re.sub(r"//[^\n]*\n", "\n", text)
+            text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
 
             # Replace single quotes with double quotes (careful with apostrophes)
             text = re.sub(r"(?<![a-zA-Z])'([^']*)'(?![a-zA-Z])", r'"\1"', text)
 
             # Handle NaN, Infinity, -Infinity (not valid JSON)
-            text = re.sub(r'\bNaN\b', 'null', text)
-            text = re.sub(r'\bInfinity\b', '999999999', text)
-            text = re.sub(r'-Infinity\b', '-999999999', text)
+            text = re.sub(r"\bNaN\b", "null", text)
+            text = re.sub(r"\bInfinity\b", "999999999", text)
+            text = re.sub(r"-Infinity\b", "-999999999", text)
 
             # Remove trailing commas before ] or }
-            text = re.sub(r',\s*([}\]])', r'\1', text)
+            text = re.sub(r",\s*([}\]])", r"\1", text)
 
             # Fix missing commas between elements
             text = re.sub(r'"\s+(")', r'", \1', text)
-            text = re.sub(r'(\d)\s+(")', r'\1, \2', text)
-            text = re.sub(r'(true|false|null)\s+(")', r'\1, \2', text)
-            text = re.sub(r'}\s+{', r'}, {', text)
-            text = re.sub(r']\s+\[', r'], [', text)
+            text = re.sub(r'(\d)\s+(")', r"\1, \2", text)
+            text = re.sub(r'(true|false|null)\s+(")', r"\1, \2", text)
+            text = re.sub(r"}\s+{", r"}, {", text)
+            text = re.sub(r"]\s+\[", r"], [", text)
 
             # Fix unquoted property names (simple cases)
-            text = re.sub(r'{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'{"\1":', text)
-            text = re.sub(r',\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r',"\1":', text)
+            text = re.sub(r"{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:", r'{"\1":', text)
+            text = re.sub(r",\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:", r',"\1":', text)
 
             # Fix key:value pairs inside arrays that should be wrapped in {}
             # Pattern: ["key": "value"] -> [{"key": "value"}]
             text = re.sub(r'\[\s*"([^"]+)"\s*:', r'[{"\\1":', text)
 
             # Fix Python-style True/False/None
-            text = re.sub(r'\bTrue\b', 'true', text)
-            text = re.sub(r'\bFalse\b', 'false', text)
-            text = re.sub(r'\bNone\b', 'null', text)
+            text = re.sub(r"\bTrue\b", "true", text)
+            text = re.sub(r"\bFalse\b", "false", text)
+            text = re.sub(r"\bNone\b", "null", text)
 
             return text
 
         def balance_braces(text: str) -> str:
             """Try to balance unclosed braces/brackets."""
-            open_braces = text.count('{') - text.count('}')
-            open_brackets = text.count('[') - text.count(']')
+            open_braces = text.count("{") - text.count("}")
+            open_brackets = text.count("[") - text.count("]")
 
             # Add missing closing braces/brackets
             if open_braces > 0:
-                text = text.rstrip() + '}' * open_braces
+                text = text.rstrip() + "}" * open_braces
             if open_brackets > 0:
-                text = text.rstrip() + ']' * open_brackets
+                text = text.rstrip() + "]" * open_brackets
 
             return text
 
@@ -1506,11 +1532,19 @@ class ConcreteDocumenterAgent(DocumenterAgent):
                 # Strategy 3: With balanced braces
                 lambda t: json.loads(balance_braces(try_fix_json(t))),
                 # Strategy 4: Extract JSON object from text
-                lambda t: json.loads(re.search(r'\{[\s\S]*\}', t).group()) if re.search(r'\{[\s\S]*\}', t) else None,
+                lambda t: json.loads(re.search(r"\{[\s\S]*\}", t).group())
+                if re.search(r"\{[\s\S]*\}", t)
+                else None,
                 # Strategy 5: Extract and fix
-                lambda t: json.loads(try_fix_json(re.search(r'\{[\s\S]*\}', t).group())) if re.search(r'\{[\s\S]*\}', t) else None,
+                lambda t: json.loads(try_fix_json(re.search(r"\{[\s\S]*\}", t).group()))
+                if re.search(r"\{[\s\S]*\}", t)
+                else None,
                 # Strategy 6: Extract, fix, and balance
-                lambda t: json.loads(balance_braces(try_fix_json(re.search(r'\{[\s\S]*\}', t).group()))) if re.search(r'\{[\s\S]*\}', t) else None,
+                lambda t: json.loads(
+                    balance_braces(try_fix_json(re.search(r"\{[\s\S]*\}", t).group()))
+                )
+                if re.search(r"\{[\s\S]*\}", t)
+                else None,
             ]
 
             for strategy in strategies:
@@ -1614,7 +1648,8 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             # Try to extract parameter name from the description-like name
             # Look for patterns like "name (str):" or "param_name:"
             import re
-            match = re.match(r'^([a-zA-Z_][a-zA-Z0-9_]*)', name)
+
+            match = re.match(r"^([a-zA-Z_][a-zA-Z0-9_]*)", name)
             if match:
                 extracted = match.group(1)
                 if len(extracted) < 30:
@@ -1638,24 +1673,28 @@ class ConcreteDocumenterAgent(DocumenterAgent):
                 # Convert default to string (LLM may return int/float like 0 or 1.0)
                 raw_default = p.get("default")
                 default_str = str(raw_default) if raw_default is not None else None
-                parameters.append(ParameterDoc(
-                    name=fixed_name,
-                    type=ensure_string(p.get("type")) or None,
-                    description=fixed_desc,
-                    default=default_str,
-                    required=safe_bool(p.get("required"), True),
-                ))
+                parameters.append(
+                    ParameterDoc(
+                        name=fixed_name,
+                        type=ensure_string(p.get("type")) or None,
+                        description=fixed_desc,
+                        default=default_str,
+                        required=safe_bool(p.get("required"), True),
+                    )
+                )
             elif p:  # String or other non-None value
                 # Single string could be name or description
                 p_str = str(p)
                 fixed_name, fixed_desc = sanitize_param_name(p_str, "", len(parameters))
-                parameters.append(ParameterDoc(
-                    name=fixed_name,
-                    type=None,
-                    description=fixed_desc,
-                    default=None,
-                    required=True,
-                ))
+                parameters.append(
+                    ParameterDoc(
+                        name=fixed_name,
+                        type=None,
+                        description=fixed_desc,
+                        default=None,
+                        required=True,
+                    )
+                )
 
         # Safely extract returns - handle LLM returning string, list, or dict
         raw_returns = doc_data.get("returns")
@@ -1688,10 +1727,12 @@ class ConcreteDocumenterAgent(DocumenterAgent):
         raises = []
         for e in raw_raises:
             if isinstance(e, dict):
-                raises.append(ExceptionDoc(
-                    type=ensure_string(e.get("type"), "Exception"),
-                    condition=ensure_string(e.get("condition", "")),
-                ))
+                raises.append(
+                    ExceptionDoc(
+                        type=ensure_string(e.get("type"), "Exception"),
+                        condition=ensure_string(e.get("condition", "")),
+                    )
+                )
             elif e:
                 raises.append(ExceptionDoc(type=str(e), condition=""))
 
@@ -1706,7 +1747,9 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             raw_summary = truncated + "..."
 
         # Extract description - handle dict/list instead of string
-        raw_description = ensure_string(doc_data.get("description") or doc_data.get("detailed_description"))
+        raw_description = ensure_string(
+            doc_data.get("description") or doc_data.get("detailed_description")
+        )
 
         # Handle examples - could be string, list of strings, or list of dicts
         raw_examples = doc_data.get("examples")
@@ -1972,7 +2015,15 @@ class ConcreteValidatorAgent(ValidatorAgent):
             if isinstance(value, dict):
                 # Extract meaningful content from dict
                 # Try common keys first, then join all values
-                for key in ("description", "message", "text", "value", "reason", "content", "summary"):
+                for key in (
+                    "description",
+                    "message",
+                    "text",
+                    "value",
+                    "reason",
+                    "content",
+                    "summary",
+                ):
                     if key in value and value[key]:
                         return coerce_to_str(value[key])
                 # Join all non-empty values
@@ -2008,7 +2059,9 @@ class ConcreteValidatorAgent(ValidatorAgent):
             s = coerce_to_str(value)
             return [s] if s else []
 
-        def coerce_to_float(value: any, default: float = 0.0, min_val: float = None, max_val: float = None) -> float:
+        def coerce_to_float(
+            value: any, default: float = 0.0, min_val: float = None, max_val: float = None
+        ) -> float:
             """Convert ANY value to a float. Bulletproof."""
             if value is None:
                 return default
@@ -2017,12 +2070,24 @@ class ConcreteValidatorAgent(ValidatorAgent):
             elif isinstance(value, str):
                 # Handle string scores like "high", "medium", "low"
                 score_map = {
-                    "very high": 0.95, "very_high": 0.95, "excellent": 0.95,
-                    "high": 0.85, "good": 0.85, "confident": 0.85,
-                    "medium": 0.7, "moderate": 0.7, "average": 0.7, "normal": 0.7,
-                    "low": 0.5, "poor": 0.5, "uncertain": 0.5,
-                    "very low": 0.3, "very_low": 0.3, "bad": 0.3,
-                    "none": 0.1, "zero": 0.0,
+                    "very high": 0.95,
+                    "very_high": 0.95,
+                    "excellent": 0.95,
+                    "high": 0.85,
+                    "good": 0.85,
+                    "confident": 0.85,
+                    "medium": 0.7,
+                    "moderate": 0.7,
+                    "average": 0.7,
+                    "normal": 0.7,
+                    "low": 0.5,
+                    "poor": 0.5,
+                    "uncertain": 0.5,
+                    "very low": 0.3,
+                    "very_low": 0.3,
+                    "bad": 0.3,
+                    "none": 0.1,
+                    "zero": 0.0,
                 }
                 cleaned = value.lower().strip()
                 if cleaned in score_map:
@@ -2045,7 +2110,11 @@ class ConcreteValidatorAgent(ValidatorAgent):
                 return default
 
             # Normalize 0-10 scale to 0-1
-            if result > 1.0 and (min_val is None or min_val >= 0) and (max_val is None or max_val <= 1):
+            if (
+                result > 1.0
+                and (min_val is None or min_val >= 0)
+                and (max_val is None or max_val <= 1)
+            ):
                 result = result / 10.0
 
             # Clamp to range if specified
@@ -2124,41 +2193,41 @@ class ConcreteValidatorAgent(ValidatorAgent):
             if not text or not text.strip():
                 return "{}"
             # Remove JavaScript-style comments
-            text = re.sub(r'//[^\n]*\n', '\n', text)
-            text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+            text = re.sub(r"//[^\n]*\n", "\n", text)
+            text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
             # Replace single quotes with double quotes
             text = re.sub(r"(?<![a-zA-Z])'([^']*)'(?![a-zA-Z])", r'"\1"', text)
             # Handle NaN, Infinity
-            text = re.sub(r'\bNaN\b', 'null', text)
-            text = re.sub(r'\bInfinity\b', '999999999', text)
-            text = re.sub(r'-Infinity\b', '-999999999', text)
+            text = re.sub(r"\bNaN\b", "null", text)
+            text = re.sub(r"\bInfinity\b", "999999999", text)
+            text = re.sub(r"-Infinity\b", "-999999999", text)
             # Remove trailing commas
-            text = re.sub(r',\s*([}\]])', r'\1', text)
+            text = re.sub(r",\s*([}\]])", r"\1", text)
             # Fix missing commas
             text = re.sub(r'"\s+(")', r'", \1', text)
-            text = re.sub(r'(\d)\s+(")', r'\1, \2', text)
-            text = re.sub(r'(true|false|null)\s+(")', r'\1, \2', text)
-            text = re.sub(r'}\s+{', r'}, {', text)
-            text = re.sub(r']\s+\[', r'], [', text)
+            text = re.sub(r'(\d)\s+(")', r"\1, \2", text)
+            text = re.sub(r'(true|false|null)\s+(")', r"\1, \2", text)
+            text = re.sub(r"}\s+{", r"}, {", text)
+            text = re.sub(r"]\s+\[", r"], [", text)
             # Fix unquoted property names
-            text = re.sub(r'{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'{"\1":', text)
-            text = re.sub(r',\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r',"\1":', text)
+            text = re.sub(r"{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:", r'{"\1":', text)
+            text = re.sub(r",\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:", r',"\1":', text)
             # Fix key:value pairs inside arrays that should be wrapped in {}
             text = re.sub(r'\[\s*"([^"]+)"\s*:', r'[{"\\1":', text)
             # Fix Python-style True/False/None
-            text = re.sub(r'\bTrue\b', 'true', text)
-            text = re.sub(r'\bFalse\b', 'false', text)
-            text = re.sub(r'\bNone\b', 'null', text)
+            text = re.sub(r"\bTrue\b", "true", text)
+            text = re.sub(r"\bFalse\b", "false", text)
+            text = re.sub(r"\bNone\b", "null", text)
             return text
 
         def balance_braces(text: str) -> str:
             """Try to balance unclosed braces/brackets."""
-            open_braces = text.count('{') - text.count('}')
-            open_brackets = text.count('[') - text.count(']')
+            open_braces = text.count("{") - text.count("}")
+            open_brackets = text.count("[") - text.count("]")
             if open_braces > 0:
-                text = text.rstrip() + '}' * open_braces
+                text = text.rstrip() + "}" * open_braces
             if open_brackets > 0:
-                text = text.rstrip() + ']' * open_brackets
+                text = text.rstrip() + "]" * open_brackets
             return text
 
         def extract_partial_validation(text: str) -> dict:
@@ -2171,16 +2240,18 @@ class ConcreteValidatorAgent(ValidatorAgent):
             # Try to extract scores - handle both flat and nested structures
             # Matches: "description_quality": { ... "score": 9 ...
             # Or: "score": 9 anywhere near the field name
-            for field in ["completeness", "call_graph_accuracy", "description_quality"]:
+            for field_name in ["completeness", "call_graph_accuracy", "description_quality"]:
                 # Try direct score after field name
-                score_match = re.search(rf'"{field}"[^{{]*\{{\s*[^}}]*"score"\s*:\s*([0-9.]+)', text)
+                score_match = re.search(
+                    rf'"{field_name}"[^{{]*\{{\s*[^}}]*"score"\s*:\s*([0-9.]+)', text
+                )
                 if score_match:
-                    result[field] = {"score": float(score_match.group(1))}
+                    result[field_name] = {"score": float(score_match.group(1))}
                 else:
                     # Try simpler pattern - just field followed by score somewhere
-                    score_match = re.search(rf'"{field}"[^}}]*?"score"\s*:\s*([0-9.]+)', text)
+                    score_match = re.search(rf'"{field_name}"[^}}]*?"score"\s*:\s*([0-9.]+)', text)
                     if score_match:
-                        result[field] = {"score": float(score_match.group(1))}
+                        result[field_name] = {"score": float(score_match.group(1))}
             # If we found at least some scores, return result
             return result if result else None
 
@@ -2193,9 +2264,17 @@ class ConcreteValidatorAgent(ValidatorAgent):
                 lambda t: json.loads(t),
                 lambda t: json.loads(try_fix_json(t)),
                 lambda t: json.loads(balance_braces(try_fix_json(t))),
-                lambda t: json.loads(re.search(r'\{[\s\S]*\}', t).group()) if re.search(r'\{[\s\S]*\}', t) else None,
-                lambda t: json.loads(try_fix_json(re.search(r'\{[\s\S]*\}', t).group())) if re.search(r'\{[\s\S]*\}', t) else None,
-                lambda t: json.loads(balance_braces(try_fix_json(re.search(r'\{[\s\S]*\}', t).group()))) if re.search(r'\{[\s\S]*\}', t) else None,
+                lambda t: json.loads(re.search(r"\{[\s\S]*\}", t).group())
+                if re.search(r"\{[\s\S]*\}", t)
+                else None,
+                lambda t: json.loads(try_fix_json(re.search(r"\{[\s\S]*\}", t).group()))
+                if re.search(r"\{[\s\S]*\}", t)
+                else None,
+                lambda t: json.loads(
+                    balance_braces(try_fix_json(re.search(r"\{[\s\S]*\}", t).group()))
+                )
+                if re.search(r"\{[\s\S]*\}", t)
+                else None,
             ]
 
             for strategy in strategies:
@@ -2249,9 +2328,18 @@ class ConcreteValidatorAgent(ValidatorAgent):
         status_str = ensure_string(data.get("validation_result"), "warning").lower().strip()
         # Map common variations to canonical values
         status_map = {
-            "pass": "pass", "passed": "pass", "ok": "pass", "success": "pass", "valid": "pass",
-            "fail": "fail", "failed": "fail", "error": "fail", "invalid": "fail",
-            "warning": "warning", "warn": "warning", "caution": "warning",
+            "pass": "pass",
+            "passed": "pass",
+            "ok": "pass",
+            "success": "pass",
+            "valid": "pass",
+            "fail": "fail",
+            "failed": "fail",
+            "error": "fail",
+            "invalid": "fail",
+            "warning": "warning",
+            "warn": "warning",
+            "caution": "warning",
         }
         status_str = status_map.get(status_str, status_str)
         try:
@@ -2299,22 +2387,26 @@ class ConcreteValidatorAgent(ValidatorAgent):
         corrections = []
         for c in raw_corrections:
             if isinstance(c, dict):
-                corrections.append(CorrectionApplied(
-                    field=ensure_string(c.get("field"), "unknown"),
-                    action=ensure_string(c.get("action"), "modified"),
-                    original_value=c.get("original_value"),
-                    corrected_value=c.get("corrected_value"),
-                    reason=ensure_string(c.get("reason"), ""),
-                ))
+                corrections.append(
+                    CorrectionApplied(
+                        field=ensure_string(c.get("field"), "unknown"),
+                        action=ensure_string(c.get("action"), "modified"),
+                        original_value=c.get("original_value"),
+                        corrected_value=c.get("corrected_value"),
+                        reason=ensure_string(c.get("reason"), ""),
+                    )
+                )
             elif isinstance(c, str):
                 # String correction - use as reason
-                corrections.append(CorrectionApplied(
-                    field="unknown",
-                    action="modified",
-                    original_value=None,
-                    corrected_value=None,
-                    reason=c,
-                ))
+                corrections.append(
+                    CorrectionApplied(
+                        field="unknown",
+                        action="modified",
+                        original_value=None,
+                        corrected_value=None,
+                        reason=c,
+                    )
+                )
 
         # Create metadata
         metadata = ValidatorMetadata(

@@ -8,9 +8,12 @@ documentation system.
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from twinscribe.models.comparison import ComparisonResult, Discrepancy
 
 
 class ConvergenceStatus(str, Enum):

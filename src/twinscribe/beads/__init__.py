@@ -41,6 +41,7 @@ from twinscribe.beads.lifecycle import (
 )
 from twinscribe.beads.manager import (
     BeadsLifecycleManager,
+    ResolutionAction,
     ResolutionResult,
     TicketResolution,
 )
@@ -60,6 +61,7 @@ from twinscribe.beads.tracker import (
 __all__ = [
     # Manager (discrepancy/rebuild focused)
     "BeadsLifecycleManager",
+    "ResolutionAction",
     "TicketResolution",
     "ResolutionResult",
     # Documentation Lifecycle Manager

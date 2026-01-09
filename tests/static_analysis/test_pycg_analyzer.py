@@ -248,10 +248,15 @@ class TestPyCGAnalyzerCommand:
 
     def test_build_command(self, tmp_path):
         """Test command building."""
+        import sys
+
         analyzer = PyCGAnalyzer()
         cmd = analyzer._build_command(tmp_path)
 
-        assert cmd[0] == "pycg"
+        # Uses python -m pycg to run via installed module
+        assert cmd[0] == sys.executable
+        assert cmd[1] == "-m"
+        assert cmd[2] == "pycg"
         assert "--package" in cmd
         assert str(tmp_path) in cmd
 

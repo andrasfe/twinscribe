@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field, computed_field
 
 if TYPE_CHECKING:
-    from twinscribe.models.call_graph import StreamCallGraphComparison
+    pass
 
 
 class ConvergenceCriteria(BaseModel):
@@ -274,9 +274,7 @@ class ConvergenceResult(BaseModel):
 
         # Components that didn't converge after max iterations go to Beads
         escalated = (
-            status.divergent_components
-            if status.iteration >= criteria.max_iterations
-            else []
+            status.divergent_components if status.iteration >= criteria.max_iterations else []
         )
 
         return cls(

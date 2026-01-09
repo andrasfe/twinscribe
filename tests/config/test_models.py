@@ -1,7 +1,5 @@
 """Tests for configuration models."""
 
-import os
-
 import pytest
 from pydantic import ValidationError
 
@@ -25,7 +23,6 @@ from twinscribe.config.models import (
     VerificationConfig,
     VerificationStrategy,
 )
-
 
 # List of environment variables that may be set by .env file and affect tests
 _ENV_VARS_FROM_DOTENV = [

@@ -367,6 +367,7 @@ class AsyncLLMClient:
         # This allows using any model available on OpenRouter
         logger.info(f"Using dynamic config for model: {model_name}")
         from twinscribe.config.models import ModelProvider, ModelTier
+
         return ModelConfig(
             name=model_name,
             provider=ModelProvider.OPENROUTER,
@@ -571,8 +572,7 @@ class AsyncLLMClient:
         elif response.status_code == 429:
             retry_after = response.headers.get("Retry-After", "unknown")
             logger.warning(
-                f"[{time.strftime('%H:%M:%S')}] Rate limited! "
-                f"Retry-After: {retry_after}s"
+                f"[{time.strftime('%H:%M:%S')}] Rate limited! Retry-After: {retry_after}s"
             )
             raise RateLimitError("Rate limit exceeded")
         elif response.status_code == 404:

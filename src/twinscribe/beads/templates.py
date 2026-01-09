@@ -550,13 +550,10 @@ class TicketTemplateEngine:
                 iteration = entry.get("iteration", "?")
                 rate = entry.get("agreement_rate", 0)
                 divergent = entry.get("divergent_count", 0)
-                history_lines.append(
-                    f"| {iteration} | {rate * 100:.1f}% | {divergent} |"
-                )
+                history_lines.append(f"| {iteration} | {rate * 100:.1f}% | {divergent} |")
             variables["iteration_history_section"] = (
                 "| Iteration | Agreement Rate | Divergent Components |\n"
-                "| --- | --- | --- |\n"
-                + "\n".join(history_lines)
+                "| --- | --- | --- |\n" + "\n".join(history_lines)
             )
         else:
             variables["iteration_history_section"] = "No iteration history available."

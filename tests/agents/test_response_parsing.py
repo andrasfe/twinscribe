@@ -13,8 +13,8 @@ import json
 import pytest
 
 from twinscribe.agents.documenter import DocumenterConfig
-from twinscribe.agents.validator import ValidatorConfig
 from twinscribe.agents.stream import ConcreteDocumenterAgent, ConcreteValidatorAgent
+from twinscribe.agents.validator import ValidatorConfig
 from twinscribe.models.base import ModelTier, StreamId
 
 
@@ -55,13 +55,15 @@ class TestSummaryTruncation:
 
         # Create response with very long summary
         long_summary = "A" * 300
-        response = json.dumps({
-            "documentation": {
-                "summary": long_summary,
-                "description": "Test description",
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": long_summary,
+                    "description": "Test description",
+                },
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -73,13 +75,15 @@ class TestSummaryTruncation:
         agent = ConcreteDocumenterAgent(documenter_config)
 
         summary = "A" * 200
-        response = json.dumps({
-            "documentation": {
-                "summary": summary,
-                "description": "Test",
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": summary,
+                    "description": "Test",
+                },
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -92,13 +96,15 @@ class TestSummaryTruncation:
 
         # Create a summary with words that makes truncation point clear
         words = "word " * 50  # 250 chars
-        response = json.dumps({
-            "documentation": {
-                "summary": words,
-                "description": "Test",
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": words,
+                    "description": "Test",
+                },
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -156,12 +162,14 @@ class TestScoreNormalization:
         """Score like 8 or 9 should be normalized to 0.8 or 0.9."""
         agent = ConcreteValidatorAgent(validator_config)
 
-        response = json.dumps({
-            "validation_result": "passed",
-            "completeness": {"score": 9, "missing_elements": []},
-            "call_graph_accuracy": {"score": 8, "verified_callees": [], "missing_callees": []},
-            "description_quality": {"score": 10, "issues": []},
-        })
+        response = json.dumps(
+            {
+                "validation_result": "passed",
+                "completeness": {"score": 9, "missing_elements": []},
+                "call_graph_accuracy": {"score": 8, "verified_callees": [], "missing_callees": []},
+                "description_quality": {"score": 10, "issues": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -175,12 +183,14 @@ class TestScoreNormalization:
         """Score already in 0-1 range should not be changed."""
         agent = ConcreteValidatorAgent(validator_config)
 
-        response = json.dumps({
-            "validation_result": "passed",
-            "completeness": {"score": 0.95, "missing_elements": []},
-            "call_graph_accuracy": {"score": 0.85, "verified_callees": []},
-            "description_quality": {"score": 1.0, "issues": []},
-        })
+        response = json.dumps(
+            {
+                "validation_result": "passed",
+                "completeness": {"score": 0.95, "missing_elements": []},
+                "call_graph_accuracy": {"score": 0.85, "verified_callees": []},
+                "description_quality": {"score": 1.0, "issues": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -192,11 +202,13 @@ class TestScoreNormalization:
         """Confidence score on 0-10 scale should be normalized."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {"summary": "Test", "description": "Desc"},
-            "call_graph": {"callers": [], "callees": []},
-            "confidence": 9,  # 0-10 scale
-        })
+        response = json.dumps(
+            {
+                "documentation": {"summary": "Test", "description": "Desc"},
+                "call_graph": {"callers": [], "callees": []},
+                "confidence": 9,  # 0-10 scale
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -210,14 +222,16 @@ class TestTypeGuards:
         """Parameters returned as strings instead of dicts should be handled."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {
-                "summary": "Test",
-                "description": "Desc",
-                "parameters": ["param1", "param2"],  # Strings instead of dicts
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": "Test",
+                    "description": "Desc",
+                    "parameters": ["param1", "param2"],  # Strings instead of dicts
+                },
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -229,10 +243,12 @@ class TestTypeGuards:
         """Call graph returned as string instead of dict should be handled."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {"summary": "Test", "description": "Desc"},
-            "call_graph": "no dependencies",  # String instead of dict
-        })
+        response = json.dumps(
+            {
+                "documentation": {"summary": "Test", "description": "Desc"},
+                "call_graph": "no dependencies",  # String instead of dict
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -244,12 +260,14 @@ class TestTypeGuards:
         """Nested data returned as string should be handled."""
         agent = ConcreteValidatorAgent(validator_config)
 
-        response = json.dumps({
-            "validation_result": "passed",
-            "completeness": "all complete",  # String instead of dict
-            "call_graph_accuracy": "accurate",  # String instead of dict
-            "description_quality": "good",  # String instead of dict
-        })
+        response = json.dumps(
+            {
+                "validation_result": "passed",
+                "completeness": "all complete",  # String instead of dict
+                "call_graph_accuracy": "accurate",  # String instead of dict
+                "description_quality": "good",  # String instead of dict
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -262,16 +280,18 @@ class TestTypeGuards:
         """Description returned as dict instead of string should be handled."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {
-                "summary": "Test",
-                "description": {
-                    "what": "This class implements logging",
-                    "how": "By printing to stdout",
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": "Test",
+                    "description": {
+                        "what": "This class implements logging",
+                        "how": "By printing to stdout",
+                    },
                 },
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -284,13 +304,15 @@ class TestTypeGuards:
         """Summary returned as dict instead of string should be handled."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {
-                "summary": {"brief": "A utility class"},
-                "description": "Detailed description here",
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": {"brief": "A utility class"},
+                    "description": "Detailed description here",
+                },
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -302,14 +324,16 @@ class TestTypeGuards:
         """Examples returned as string instead of list should be handled."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {
-                "summary": "Test",
-                "description": "Desc",
-                "examples": "print('hello world')",  # String instead of list
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": "Test",
+                    "description": "Desc",
+                    "examples": "print('hello world')",  # String instead of list
+                },
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -322,22 +346,25 @@ class TestTypeGuards:
         """Invalid call_type values should default to 'direct'."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {"summary": "Test", "description": "Desc"},
-            "call_graph": {
-                "callers": [
-                    {"component_id": "foo.bar", "call_type": "inherited"},  # Invalid
-                ],
-                "callees": [
-                    {"component_id": "baz.qux", "call_type": "indirect"},  # Invalid
-                ],
-            },
-        })
+        response = json.dumps(
+            {
+                "documentation": {"summary": "Test", "description": "Desc"},
+                "call_graph": {
+                    "callers": [
+                        {"component_id": "foo.bar", "call_type": "inherited"},  # Invalid
+                    ],
+                    "callees": [
+                        {"component_id": "baz.qux", "call_type": "indirect"},  # Invalid
+                    ],
+                },
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
         # Should default to DIRECT, not crash
         from twinscribe.models.base import CallType
+
         assert result.call_graph.callers[0].call_type == CallType.DIRECT
         assert result.call_graph.callees[0].call_type == CallType.DIRECT
 
@@ -345,17 +372,19 @@ class TestTypeGuards:
         """call_site_line as string should be converted to int."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {"summary": "Test", "description": "Desc"},
-            "call_graph": {
-                "callers": [
-                    {"component_id": "foo.bar", "call_site_line": "42"},  # String
-                ],
-                "callees": [
-                    {"component_id": "baz.qux", "call_site_line": "100"},  # String
-                ],
-            },
-        })
+        response = json.dumps(
+            {
+                "documentation": {"summary": "Test", "description": "Desc"},
+                "call_graph": {
+                    "callers": [
+                        {"component_id": "foo.bar", "call_site_line": "42"},  # String
+                    ],
+                    "callees": [
+                        {"component_id": "baz.qux", "call_site_line": "100"},  # String
+                    ],
+                },
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -367,10 +396,12 @@ class TestTypeGuards:
         """documentation field as string instead of dict should be handled."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": "This is a simple utility function.",
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": "This is a simple utility function.",
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -381,20 +412,22 @@ class TestTypeGuards:
         """Parameter description as dict should be converted to string."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {
-                "summary": "Test",
-                "description": "Desc",
-                "parameters": [
-                    {
-                        "name": "config",
-                        "type": {"base": "dict", "nested": "str"},  # Dict type
-                        "description": {"what": "Configuration options"},  # Dict desc
-                    }
-                ],
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": "Test",
+                    "description": "Desc",
+                    "parameters": [
+                        {
+                            "name": "config",
+                            "type": {"base": "dict", "nested": "str"},  # Dict type
+                            "description": {"what": "Configuration options"},  # Dict desc
+                        }
+                    ],
+                },
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -407,14 +440,16 @@ class TestTypeGuards:
         """raises as single dict instead of list should be handled."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {
-                "summary": "Test",
-                "description": "Desc",
-                "raises": {"type": "ValueError", "condition": "when input invalid"},
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": "Test",
+                    "description": "Desc",
+                    "raises": {"type": "ValueError", "condition": "when input invalid"},
+                },
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -503,11 +538,13 @@ class TestConfidenceStrings:
         """Confidence 'high' should be converted to ~0.85."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {"summary": "Test", "description": "Desc"},
-            "call_graph": {"callers": [], "callees": []},
-            "confidence": "high",
-        })
+        response = json.dumps(
+            {
+                "documentation": {"summary": "Test", "description": "Desc"},
+                "call_graph": {"callers": [], "callees": []},
+                "confidence": "high",
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -517,11 +554,13 @@ class TestConfidenceStrings:
         """Confidence 'low' should be converted to ~0.5."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {"summary": "Test", "description": "Desc"},
-            "call_graph": {"callers": [], "callees": []},
-            "confidence": "low",
-        })
+        response = json.dumps(
+            {
+                "documentation": {"summary": "Test", "description": "Desc"},
+                "call_graph": {"callers": [], "callees": []},
+                "confidence": "low",
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -531,11 +570,13 @@ class TestConfidenceStrings:
         """Confidence 'medium' should be converted to ~0.7."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {"summary": "Test", "description": "Desc"},
-            "call_graph": {"callers": [], "callees": []},
-            "confidence": "medium",
-        })
+        response = json.dumps(
+            {
+                "documentation": {"summary": "Test", "description": "Desc"},
+                "call_graph": {"callers": [], "callees": []},
+                "confidence": "medium",
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -549,14 +590,16 @@ class TestBooleanStrings:
         """Parameter required='true' should be converted to True."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {
-                "summary": "Test",
-                "description": "Desc",
-                "parameters": [{"name": "param1", "required": "true"}],
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": "Test",
+                    "description": "Desc",
+                    "parameters": [{"name": "param1", "required": "true"}],
+                },
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -566,14 +609,16 @@ class TestBooleanStrings:
         """Parameter required='false' should be converted to False."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {
-                "summary": "Test",
-                "description": "Desc",
-                "parameters": [{"name": "param1", "required": "false"}],
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": "Test",
+                    "description": "Desc",
+                    "parameters": [{"name": "param1", "required": "false"}],
+                },
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -583,17 +628,19 @@ class TestBooleanStrings:
         """Parameter required='yes'/'no' should be converted to bool."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {
-                "summary": "Test",
-                "description": "Desc",
-                "parameters": [
-                    {"name": "param1", "required": "yes"},
-                    {"name": "param2", "required": "no"},
-                ],
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": "Test",
+                    "description": "Desc",
+                    "parameters": [
+                        {"name": "param1", "required": "yes"},
+                        {"name": "param2", "required": "no"},
+                    ],
+                },
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -608,12 +655,14 @@ class TestValidatorEdgeCases:
         """Score 'high' in validation should be converted correctly."""
         agent = ConcreteValidatorAgent(validator_config)
 
-        response = json.dumps({
-            "validation_result": "passed",
-            "completeness": {"score": "high"},
-            "call_graph_accuracy": {"score": "medium"},
-            "description_quality": {"score": "low"},
-        })
+        response = json.dumps(
+            {
+                "validation_result": "passed",
+                "completeness": {"score": "high"},
+                "call_graph_accuracy": {"score": "medium"},
+                "description_quality": {"score": "low"},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -625,15 +674,17 @@ class TestValidatorEdgeCases:
         """missing_elements as string should be wrapped in list."""
         agent = ConcreteValidatorAgent(validator_config)
 
-        response = json.dumps({
-            "validation_result": "warning",
-            "completeness": {
-                "score": 0.8,
-                "missing_elements": "return type",  # String instead of list
-            },
-            "call_graph_accuracy": {"score": 1.0},
-            "description_quality": {"score": 1.0},
-        })
+        response = json.dumps(
+            {
+                "validation_result": "warning",
+                "completeness": {
+                    "score": 0.8,
+                    "missing_elements": "return type",  # String instead of list
+                },
+                "call_graph_accuracy": {"score": 1.0},
+                "description_quality": {"score": 1.0},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -644,17 +695,19 @@ class TestValidatorEdgeCases:
         """corrections_applied as single dict should be wrapped in list."""
         agent = ConcreteValidatorAgent(validator_config)
 
-        response = json.dumps({
-            "validation_result": "passed",
-            "completeness": {"score": 1.0},
-            "call_graph_accuracy": {"score": 1.0},
-            "description_quality": {"score": 1.0},
-            "corrections_applied": {
-                "field": "description",
-                "action": "modified",
-                "reason": "Added more detail",
-            },
-        })
+        response = json.dumps(
+            {
+                "validation_result": "passed",
+                "completeness": {"score": 1.0},
+                "call_graph_accuracy": {"score": 1.0},
+                "description_quality": {"score": 1.0},
+                "corrections_applied": {
+                    "field": "description",
+                    "action": "modified",
+                    "reason": "Added more detail",
+                },
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -665,16 +718,19 @@ class TestValidatorEdgeCases:
         """validation_result should be case insensitive."""
         agent = ConcreteValidatorAgent(validator_config)
 
-        response = json.dumps({
-            "validation_result": "PASSED",
-            "completeness": {"score": 1.0},
-            "call_graph_accuracy": {"score": 1.0},
-            "description_quality": {"score": 1.0},
-        })
+        response = json.dumps(
+            {
+                "validation_result": "PASSED",
+                "completeness": {"score": 1.0},
+                "call_graph_accuracy": {"score": 1.0},
+                "description_quality": {"score": 1.0},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
         from twinscribe.models.base import ValidationStatus
+
         assert result.validation_result == ValidationStatus.PASS
 
     def test_issues_as_list_of_dicts(self, validator_config):
@@ -686,26 +742,28 @@ class TestValidatorEdgeCases:
         """
         agent = ConcreteValidatorAgent(validator_config)
 
-        response = json.dumps({
-            "validation_result": "warning",
-            "completeness": {"score": 0.9},
-            "call_graph_accuracy": {"score": 1.0},
-            "description_quality": {
-                "score": 0.8,
-                "issues": [
-                    {
-                        "issue_type": "summary_redundant",
-                        "severity": "minor",
-                        "description": "Summary repeats the function name. This is a minor issue."
-                    },
-                    {
-                        "issue_type": "missing_usage_context",
-                        "severity": "minor",
-                        "description": "Missing context about when to use this (LangChain LCEL graph)."
-                    },
-                ],
-            },
-        })
+        response = json.dumps(
+            {
+                "validation_result": "warning",
+                "completeness": {"score": 0.9},
+                "call_graph_accuracy": {"score": 1.0},
+                "description_quality": {
+                    "score": 0.8,
+                    "issues": [
+                        {
+                            "issue_type": "summary_redundant",
+                            "severity": "minor",
+                            "description": "Summary repeats the function name. This is a minor issue.",
+                        },
+                        {
+                            "issue_type": "missing_usage_context",
+                            "severity": "minor",
+                            "description": "Missing context about when to use this (LangChain LCEL graph).",
+                        },
+                    ],
+                },
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -715,7 +773,10 @@ class TestValidatorEdgeCases:
         # Each issue should be a string (converted from dict)
         assert all(isinstance(issue, str) for issue in result.description_quality.issues)
         # Content should be preserved
-        assert "summary" in result.description_quality.issues[0].lower() or "redundant" in result.description_quality.issues[0].lower()
+        assert (
+            "summary" in result.description_quality.issues[0].lower()
+            or "redundant" in result.description_quality.issues[0].lower()
+        )
 
     def test_nested_validation_results_structure(self, validator_config):
         """Handle LLMs that wrap everything in 'validation_results' (plural).
@@ -727,22 +788,24 @@ class TestValidatorEdgeCases:
         """
         agent = ConcreteValidatorAgent(validator_config)
 
-        response = json.dumps({
-            "component_id": "test.Component",
-            "validation_results": {
-                "description_quality": {
-                    "score": 9,
-                    "issues": [],
-                    "assessment": "Good documentation",
+        response = json.dumps(
+            {
+                "component_id": "test.Component",
+                "validation_results": {
+                    "description_quality": {
+                        "score": 9,
+                        "issues": [],
+                        "assessment": "Good documentation",
+                    },
+                    "completeness": {
+                        "score": 8,
+                    },
+                    "call_graph_accuracy": {
+                        "score": 10,
+                    },
                 },
-                "completeness": {
-                    "score": 8,
-                },
-                "call_graph_accuracy": {
-                    "score": 10,
-                },
-            },
-        })
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -759,20 +822,22 @@ class TestParameterNameFix:
         """When name field contains a description, generate placeholder name."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {
-                "summary": "Test function",
-                "description": "Does something",
-                "parameters": [
-                    {
-                        "name": "The name of the person to greet. This string will be inserted into the greeting message.",
-                        "type": "str",
-                        "description": "",
-                    }
-                ],
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": "Test function",
+                    "description": "Does something",
+                    "parameters": [
+                        {
+                            "name": "The name of the person to greet. This string will be inserted into the greeting message.",
+                            "type": "str",
+                            "description": "",
+                        }
+                    ],
+                },
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -788,20 +853,22 @@ class TestParameterNameFix:
         """When name and description are swapped, fix them."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {
-                "summary": "Test function",
-                "description": "Does something",
-                "parameters": [
-                    {
-                        "name": "A long description that should not be a parameter name at all",
-                        "type": "str",
-                        "description": "username",  # This looks like the actual param name
-                    }
-                ],
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": "Test function",
+                    "description": "Does something",
+                    "parameters": [
+                        {
+                            "name": "A long description that should not be a parameter name at all",
+                            "type": "str",
+                            "description": "username",  # This looks like the actual param name
+                        }
+                    ],
+                },
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -842,28 +909,31 @@ class TestRobustJsonParsing:
         agent = ConcreteDocumenterAgent(documenter_config)
 
         # Completely malformed but has extractable data
-        bad_json = '''
+        bad_json = """
         This is not valid JSON at all
         "summary": "Extracted summary"
         "description": "Extracted description"
         random garbage
-        '''
+        """
 
         result = agent._parse_response(bad_json, "test.Component", 100)
 
         # Should extract partial data via regex
-        assert "Extracted" in result.documentation.summary or "Extracted" in result.documentation.description
+        assert (
+            "Extracted" in result.documentation.summary
+            or "Extracted" in result.documentation.description
+        )
 
     def test_validator_partial_extraction(self, validator_config):
         """Validator should extract partial data from malformed JSON."""
         agent = ConcreteValidatorAgent(validator_config)
 
         # Malformed JSON with extractable data
-        bad_json = '''
+        bad_json = """
         broken json here
         "validation_result": "passed"
         "completeness": broken { "score": 0.95 }
-        '''
+        """
 
         result = agent._parse_response(bad_json, "test.Component", 100)
 
@@ -879,13 +949,15 @@ class TestCallerCalleeEdgeCases:
         """Callers as list of strings should be handled."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {"summary": "Test", "description": "Desc"},
-            "call_graph": {
-                "callers": ["foo.bar", "baz.qux"],  # Strings instead of dicts
-                "callees": [],
-            },
-        })
+        response = json.dumps(
+            {
+                "documentation": {"summary": "Test", "description": "Desc"},
+                "call_graph": {
+                    "callers": ["foo.bar", "baz.qux"],  # Strings instead of dicts
+                    "callees": [],
+                },
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -897,13 +969,15 @@ class TestCallerCalleeEdgeCases:
         """component_id as number should be converted to string."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {"summary": "Test", "description": "Desc"},
-            "call_graph": {
-                "callers": [{"component_id": 42}],  # Number instead of string
-                "callees": [],
-            },
-        })
+        response = json.dumps(
+            {
+                "documentation": {"summary": "Test", "description": "Desc"},
+                "call_graph": {
+                    "callers": [{"component_id": 42}],  # Number instead of string
+                    "callees": [],
+                },
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -914,17 +988,19 @@ class TestCallerCalleeEdgeCases:
         """Returns as list should take first element."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {
-                "summary": "Test",
-                "description": "Desc",
-                "returns": [
-                    {"type": "str", "description": "The result"},
-                    {"type": "int", "description": "The count"},
-                ],
-            },
-            "call_graph": {"callers": [], "callees": []},
-        })
+        response = json.dumps(
+            {
+                "documentation": {
+                    "summary": "Test",
+                    "description": "Desc",
+                    "returns": [
+                        {"type": "str", "description": "The result"},
+                        {"type": "int", "description": "The count"},
+                    ],
+                },
+                "call_graph": {"callers": [], "callees": []},
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -936,13 +1012,15 @@ class TestCallerCalleeEdgeCases:
         """call_site_line of 0 should become None (invalid line number)."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {"summary": "Test", "description": "Desc"},
-            "call_graph": {
-                "callers": [{"component_id": "foo.bar", "call_site_line": 0}],
-                "callees": [{"component_id": "baz.qux", "call_site_line": 0}],
-            },
-        })
+        response = json.dumps(
+            {
+                "documentation": {"summary": "Test", "description": "Desc"},
+                "call_graph": {
+                    "callers": [{"component_id": "foo.bar", "call_site_line": 0}],
+                    "callees": [{"component_id": "baz.qux", "call_site_line": 0}],
+                },
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -955,13 +1033,15 @@ class TestCallerCalleeEdgeCases:
         """call_site_line of -1 should become None (invalid line number)."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {"summary": "Test", "description": "Desc"},
-            "call_graph": {
-                "callers": [{"component_id": "foo.bar", "call_site_line": -1}],
-                "callees": [{"component_id": "baz.qux", "call_site_line": -5}],
-            },
-        })
+        response = json.dumps(
+            {
+                "documentation": {"summary": "Test", "description": "Desc"},
+                "call_graph": {
+                    "callers": [{"component_id": "foo.bar", "call_site_line": -1}],
+                    "callees": [{"component_id": "baz.qux", "call_site_line": -5}],
+                },
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 
@@ -974,13 +1054,15 @@ class TestCallerCalleeEdgeCases:
         """Valid call_site_line values (>= 1) should be preserved."""
         agent = ConcreteDocumenterAgent(documenter_config)
 
-        response = json.dumps({
-            "documentation": {"summary": "Test", "description": "Desc"},
-            "call_graph": {
-                "callers": [{"component_id": "foo.bar", "call_site_line": 42}],
-                "callees": [{"component_id": "baz.qux", "call_site_line": 1}],
-            },
-        })
+        response = json.dumps(
+            {
+                "documentation": {"summary": "Test", "description": "Desc"},
+                "call_graph": {
+                    "callers": [{"component_id": "foo.bar", "call_site_line": 42}],
+                    "callees": [{"component_id": "baz.qux", "call_site_line": 1}],
+                },
+            }
+        )
 
         result = agent._parse_response(response, "test.Component", 100)
 

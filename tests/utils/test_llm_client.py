@@ -18,7 +18,6 @@ from twinscribe.utils.llm_client import (
     AuthenticationError,
     LLMResponse,
     Message,
-    ModelNotFoundError,
     RateLimiter,
     RateLimitError,
     TokenUsage,

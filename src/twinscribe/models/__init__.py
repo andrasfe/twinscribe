@@ -43,6 +43,8 @@ from twinscribe.models.convergence import (
     ConvergenceHistoryEntry,
     ConvergenceReport,
     ConvergenceResult,
+)
+from twinscribe.models.convergence import (
     ConvergenceStatus as CallGraphConvergenceStatus,
 )
 from twinscribe.models.documentation import (
