@@ -738,6 +738,7 @@ class ConcreteComparatorAgent(ComparatorAgent):
                     Message(role="system", content=self.SYSTEM_PROMPT),
                     Message(role="user", content=prompt),
                 ],
+                max_tokens=self._comparator_config.max_tokens,
                 json_mode=True,
                 temperature=0.0,
             )
