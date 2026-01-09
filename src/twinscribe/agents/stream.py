@@ -1635,11 +1635,14 @@ class ConcreteDocumenterAgent(DocumenterAgent):
                 raw_name = p.get("name", "")
                 raw_desc = p.get("description", "")
                 fixed_name, fixed_desc = sanitize_param_name(raw_name, raw_desc, idx)
+                # Convert default to string (LLM may return int/float like 0 or 1.0)
+                raw_default = p.get("default")
+                default_str = str(raw_default) if raw_default is not None else None
                 parameters.append(ParameterDoc(
                     name=fixed_name,
                     type=ensure_string(p.get("type")) or None,
                     description=fixed_desc,
-                    default=p.get("default"),
+                    default=default_str,
                     required=safe_bool(p.get("required"), True),
                 ))
             elif p:  # String or other non-None value

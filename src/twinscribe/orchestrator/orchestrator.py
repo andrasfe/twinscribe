@@ -664,14 +664,15 @@ class DualStreamOrchestrator:
         logger.info(call_graph_validation.get_summary())
 
         # Export consensus call graph and discrepancies to files
-        output_files = call_graph_validation.export_call_graphs(
-            output_dir=self._config.output_dir,
-            iteration=iteration,
-        )
-        logger.info(
-            f"Exported call graphs: consensus={output_files['consensus']}, "
-            f"discrepancies={output_files['discrepancies']}"
-        )
+        if self._checkpoint_manager:
+            output_files = call_graph_validation.export_call_graphs(
+                output_dir=str(self._checkpoint_manager._output_dir),
+                iteration=iteration,
+            )
+            logger.info(
+                f"Exported call graphs: consensus={output_files['consensus']}, "
+                f"discrepancies={output_files['discrepancies']}"
+            )
 
         # Store comparison for later use in convergence checking and Beads ticket creation
         self._latest_call_graph_comparison = call_graph_validation
