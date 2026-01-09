@@ -168,15 +168,30 @@ DOCUMENTATION QUALITY REQUIREMENTS:
    - Document return values with type and what the returned value represents
    - Document ALL exceptions that can be raised and under what conditions
 
-4. CALL GRAPH:
-   - Identify ALL function/method calls made BY this component (callees)
-   - When available, identify callers OF this component
-   - Be precise about call site line numbers
-   - Distinguish between direct calls, conditional calls, and calls in loops
+4. CALL GRAPH (CRITICAL - DO NOT SKIP):
+   CALLEES (what THIS component calls):
+   - Scan EVERY line of source code for function/method calls
+   - Include: function calls like foo(), method calls like obj.method(), constructor calls like ClassName()
+   - Include: super().__init__(), self.other_method(), imported_module.function()
+   - Include: attribute access that invokes properties: obj.property_name
+   - Include: built-in calls: len(), str(), list(), dict(), print(), etc.
+   - For abstract methods with no body: callees should be empty (this is correct)
+
+   CALLERS (what calls THIS component):
+   - Check the Dependency Context section - if component X is listed there and its summary mentions calling this component, X is a caller
+   - Check if this is a method that would be called by other methods in the same class
+   - Check if this is inherited/overridden - parent class methods are callers
+   - For public methods: assume they have callers even if not explicitly known
+
+   CALL TYPES:
+   - "direct": Normal function/method call
+   - "conditional": Call inside if/else/try/except
+   - "loop": Call inside for/while loop
+   - "callback": Passed as argument to another function
 
 You have access to:
 - The source code of the focal component
-- Documentation of dependencies (already processed)
+- Documentation of dependencies (already processed) - USE THIS TO IDENTIFY CALLERS
 - Optional static analysis hints
 
 Do not hallucinate call relationships that don't exist in the code.
@@ -205,11 +220,14 @@ OUTPUT FORMAT - You MUST respond with valid JSON matching this exact structure:
   "confidence": 0.85
 }
 
-CRITICAL: The call_graph section is REQUIRED. Analyze the source code to identify:
-- callees: Functions/methods THIS component calls (look for function calls in the code)
-- callers: Other components that call THIS component (if known from context)
-- call_type: "direct", "conditional", "loop", or "callback"
-- call_site_line: The line number where the call occurs"""
+CRITICAL REQUIREMENTS FOR call_graph:
+1. NEVER return empty callers AND empty callees unless this is truly an isolated component
+2. For abstract methods: callees=[] is correct, but look for callers in dependency context
+3. For concrete methods: scan EVERY line for any function/method/constructor calls
+4. Include built-in calls (len, str, list, dict, print, isinstance, etc.)
+5. Include self.method() calls to other methods in the same class
+6. If static_analysis_hints show callees, verify them against source code
+7. call_site_line should be the actual line number from source code, or null if unknown"""
 
     def __init__(self, config: DocumenterConfig) -> None:
         """Initialize the documenter agent.
@@ -299,14 +317,20 @@ CRITICAL: The call_graph section is REQUIRED. Analyze the source code to identif
                 )
 
         if input_data.static_analysis_hints:
+            callees = input_data.static_analysis_hints.get_callees(input_data.component.component_id)
+            callers = input_data.static_analysis_hints.get_callers(input_data.component.component_id)
             lines.extend(
                 [
-                    "## Static Analysis Hints",
-                    f"Known callees: {len(input_data.static_analysis_hints.get_callees(input_data.component.component_id))}",
-                    f"Known callers: {len(input_data.static_analysis_hints.get_callers(input_data.component.component_id))}",
+                    "## Static Analysis Hints (verify against source code)",
+                    f"Known callees ({len(callees)}): {', '.join(callees[:20]) if callees else 'none detected'}",
+                    f"Known callers ({len(callers)}): {', '.join(callers[:20]) if callers else 'none detected'}",
                     "",
                 ]
             )
+            if len(callees) > 20:
+                lines.append(f"  ... and {len(callees) - 20} more callees")
+            if len(callers) > 20:
+                lines.append(f"  ... and {len(callers) - 20} more callers")
 
         if input_data.corrections:
             lines.extend(
