@@ -179,8 +179,37 @@ You have access to:
 - Documentation of dependencies (already processed)
 - Optional static analysis hints
 
-Output in the specified JSON schema. Do not hallucinate call relationships
-that don't exist in the code. Ensure descriptions are thorough and informative."""
+Do not hallucinate call relationships that don't exist in the code.
+Ensure descriptions are thorough and informative.
+
+OUTPUT FORMAT - You MUST respond with valid JSON matching this exact structure:
+{
+  "documentation": {
+    "summary": "One-line description (max 200 chars)",
+    "description": "Detailed multi-paragraph explanation",
+    "parameters": [
+      {"name": "param_name", "type": "str", "description": "What it does", "required": true}
+    ],
+    "returns": {"type": "ReturnType", "description": "What is returned"},
+    "raises": [{"type": "ExceptionType", "condition": "When raised"}],
+    "examples": ["example code snippet"]
+  },
+  "call_graph": {
+    "callers": [
+      {"component_id": "module.Class.method_that_calls_this", "call_site_line": 42, "call_type": "direct"}
+    ],
+    "callees": [
+      {"component_id": "module.function_this_calls", "call_site_line": 15, "call_type": "direct"}
+    ]
+  },
+  "confidence": 0.85
+}
+
+CRITICAL: The call_graph section is REQUIRED. Analyze the source code to identify:
+- callees: Functions/methods THIS component calls (look for function calls in the code)
+- callers: Other components that call THIS component (if known from context)
+- call_type: "direct", "conditional", "loop", or "callback"
+- call_site_line: The line number where the call occurs"""
 
     def __init__(self, config: DocumenterConfig) -> None:
         """Initialize the documenter agent.
