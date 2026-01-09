@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from datetime import datetime
@@ -749,8 +750,69 @@ class ConcreteComparatorAgent(ComparatorAgent):
                 cost=response.usage.cost_usd,
             )
 
-            # Parse response
-            result = json.loads(response.content)
+            # Parse response with robust JSON handling
+            def try_fix_json(text: str) -> str:
+                """Fix common JSON syntax errors from LLMs."""
+                if not text or not text.strip():
+                    return "{}"
+                # Remove JS comments
+                text = re.sub(r'//[^\n]*\n', '\n', text)
+                text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+                # Single quotes to double
+                text = re.sub(r"(?<![a-zA-Z])'([^']*)'(?![a-zA-Z])", r'"\1"', text)
+                # NaN/Infinity
+                text = re.sub(r'\bNaN\b', 'null', text)
+                text = re.sub(r'\bInfinity\b', '999999999', text)
+                text = re.sub(r'-Infinity\b', '-999999999', text)
+                # Trailing commas
+                text = re.sub(r',\s*([}\]])', r'\1', text)
+                # Missing commas
+                text = re.sub(r'"\s+(")', r'", \1', text)
+                text = re.sub(r'}\s+{', r'}, {', text)
+                # Unquoted keys
+                text = re.sub(r'{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'{"\1":', text)
+                text = re.sub(r',\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r',"\1":', text)
+                # Python True/False/None
+                text = re.sub(r'\bTrue\b', 'true', text)
+                text = re.sub(r'\bFalse\b', 'false', text)
+                text = re.sub(r'\bNone\b', 'null', text)
+                return text
+
+            def balance_braces(text: str) -> str:
+                """Balance unclosed braces/brackets."""
+                open_braces = text.count('{') - text.count('}')
+                open_brackets = text.count('[') - text.count(']')
+                if open_braces > 0:
+                    text = text.rstrip() + '}' * open_braces
+                if open_brackets > 0:
+                    text = text.rstrip() + ']' * open_brackets
+                return text
+
+            def safe_json_parse(text: str) -> dict | None:
+                """Try multiple strategies to parse JSON."""
+                if not text or not text.strip():
+                    return {"discrepancies": []}
+                strategies = [
+                    lambda t: json.loads(t),
+                    lambda t: json.loads(try_fix_json(t)),
+                    lambda t: json.loads(balance_braces(try_fix_json(t))),
+                    lambda t: json.loads(re.search(r'\{[\s\S]*\}', t).group()) if re.search(r'\{[\s\S]*\}', t) else None,
+                    lambda t: json.loads(try_fix_json(re.search(r'\{[\s\S]*\}', t).group())) if re.search(r'\{[\s\S]*\}', t) else None,
+                ]
+                for strategy in strategies:
+                    try:
+                        result = strategy(text)
+                        if result is not None:
+                            return result
+                    except (json.JSONDecodeError, AttributeError, TypeError):
+                        continue
+                return None
+
+            result = safe_json_parse(response.content)
+            if result is None:
+                logger.warning(f"Failed to parse comparator response for {component_id}, using empty discrepancies")
+                return []
+
             discrepancies = []
 
             for item in result.get("discrepancies", []):
