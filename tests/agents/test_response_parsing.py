@@ -897,3 +897,60 @@ class TestCallerCalleeEdgeCases:
         assert result.documentation.returns is not None
         assert result.documentation.returns.type == "str"
         assert "result" in result.documentation.returns.description
+
+    def test_call_site_line_zero_becomes_none(self, documenter_config):
+        """call_site_line of 0 should become None (invalid line number)."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {"summary": "Test", "description": "Desc"},
+            "call_graph": {
+                "callers": [{"component_id": "foo.bar", "call_site_line": 0}],
+                "callees": [{"component_id": "baz.qux", "call_site_line": 0}],
+            },
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert len(result.call_graph.callers) == 1
+        assert result.call_graph.callers[0].call_site_line is None
+        assert len(result.call_graph.callees) == 1
+        assert result.call_graph.callees[0].call_site_line is None
+
+    def test_call_site_line_negative_becomes_none(self, documenter_config):
+        """call_site_line of -1 should become None (invalid line number)."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {"summary": "Test", "description": "Desc"},
+            "call_graph": {
+                "callers": [{"component_id": "foo.bar", "call_site_line": -1}],
+                "callees": [{"component_id": "baz.qux", "call_site_line": -5}],
+            },
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert len(result.call_graph.callers) == 1
+        assert result.call_graph.callers[0].call_site_line is None
+        assert len(result.call_graph.callees) == 1
+        assert result.call_graph.callees[0].call_site_line is None
+
+    def test_call_site_line_valid_preserved(self, documenter_config):
+        """Valid call_site_line values (>= 1) should be preserved."""
+        agent = ConcreteDocumenterAgent(documenter_config)
+
+        response = json.dumps({
+            "documentation": {"summary": "Test", "description": "Desc"},
+            "call_graph": {
+                "callers": [{"component_id": "foo.bar", "call_site_line": 42}],
+                "callees": [{"component_id": "baz.qux", "call_site_line": 1}],
+            },
+        })
+
+        result = agent._parse_response(response, "test.Component", 100)
+
+        assert len(result.call_graph.callers) == 1
+        assert result.call_graph.callers[0].call_site_line == 42
+        assert len(result.call_graph.callees) == 1
+        assert result.call_graph.callees[0].call_site_line == 1

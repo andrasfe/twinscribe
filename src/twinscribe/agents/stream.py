@@ -1734,6 +1734,16 @@ class ConcreteDocumenterAgent(DocumenterAgent):
                 return str(value.get("id") or value.get("name") or value.get("component_id") or "")
             return str(value).strip()
 
+        def safe_line_number(value) -> int | None:
+            """Sanitize line number - must be >= 1, otherwise None.
+
+            LLMs sometimes return 0, -1, or other invalid values for unknown lines.
+            """
+            line = safe_int(value)
+            if line is None or line < 1:
+                return None
+            return line
+
         # Filter out entries with empty component_id and handle non-dict entries
         raw_callers = cg_data.get("callers") or []
         if not isinstance(raw_callers, list):
@@ -1769,7 +1779,7 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             callers=[
                 CallerRef(
                     component_id=c["component_id"],
-                    call_site_line=safe_int(c.get("call_site_line")),
+                    call_site_line=safe_line_number(c.get("call_site_line")),
                     call_type=safe_call_type(c.get("call_type")),
                 )
                 for c in callers_data
@@ -1777,7 +1787,7 @@ class ConcreteDocumenterAgent(DocumenterAgent):
             callees=[
                 CalleeRef(
                     component_id=c["component_id"],
-                    call_site_line=safe_int(c.get("call_site_line")),
+                    call_site_line=safe_line_number(c.get("call_site_line")),
                     call_type=safe_call_type(c.get("call_type")),
                 )
                 for c in callees_data
