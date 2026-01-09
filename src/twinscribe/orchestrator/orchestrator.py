@@ -307,8 +307,60 @@ class DualStreamOrchestrator:
             f"{processed_b} components in stream B"
         )
 
+        # Load previously documented outputs into stream output dicts
+        # This is critical for the comparison step after resume
+        await self._load_previous_outputs(checkpoint_state)
+
         # Run the normal pipeline - it will use _resume_state to skip components
         return await self.run()
+
+    async def _load_previous_outputs(
+        self,
+        checkpoint_state: "CheckpointState",
+    ) -> None:
+        """Load previously documented outputs from disk into stream output dicts.
+
+        This ensures the comparison step has access to all outputs, not just
+        newly processed ones.
+
+        Args:
+            checkpoint_state: Checkpoint state with output paths
+        """
+        from twinscribe.models.documentation import DocumentationOutput
+
+        if not self._checkpoint_manager:
+            logger.warning("No checkpoint manager - cannot load previous outputs")
+            return
+
+        loaded_a = 0
+        loaded_b = 0
+
+        for stream_id, stream in [("A", self._stream_a), ("B", self._stream_b)]:
+            processed = checkpoint_state.processed_components.get(stream_id, set())
+            for component_id in processed:
+                # Load output from disk
+                output_data = self._checkpoint_manager.load_component_output(
+                    component_id, stream_id
+                )
+                if output_data:
+                    try:
+                        # Parse into DocumentationOutput
+                        doc_output = DocumentationOutput.model_validate(output_data)
+                        # Add to stream's output dict
+                        stream._output.outputs[component_id] = doc_output
+                        if stream_id == "A":
+                            loaded_a += 1
+                        else:
+                            loaded_b += 1
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to parse output for {component_id} ({stream_id}): {e}"
+                        )
+
+        logger.info(
+            f"Loaded {loaded_a} previous outputs for Stream A, "
+            f"{loaded_b} for Stream B"
+        )
 
     def _get_unprocessed_components(
         self,
