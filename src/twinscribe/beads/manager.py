@@ -38,6 +38,20 @@ from twinscribe.beads.tracker import (
 )
 
 
+def _priority_to_int(priority: str | int) -> int:
+    """Convert priority string to int (0=highest, 4=lowest)."""
+    if isinstance(priority, int):
+        return priority
+    priority_map = {
+        "critical": 0,
+        "high": 0,
+        "medium": 1,
+        "low": 2,
+        "lowest": 3,
+    }
+    return priority_map.get(priority.lower(), 1)
+
+
 class ResolutionAction(str, Enum):
     """Actions that can be taken to resolve a discrepancy."""
 
@@ -228,17 +242,10 @@ class BeadsLifecycleManager:
 
         # Create the ticket
         request = CreateIssueRequest(
-            project=self._config.project,
-            issue_type="Task",
-            summary=summary,
+            title=summary,
             description=description,
-            priority=priority,
+            priority=_priority_to_int(priority),
             labels=list(set(labels)),
-            custom_fields={
-                "discrepancy_id": data.discrepancy_id,
-                "component_name": data.component_name,
-                "iteration": data.iteration,
-            },
         )
 
         issue = await self._client.create_issue(request)
@@ -296,17 +303,10 @@ class BeadsLifecycleManager:
 
         # Create the ticket
         request = CreateIssueRequest(
-            project=self._config.rebuild_project,
-            issue_type="Story",
-            summary=summary,
+            title=summary,
             description=description,
-            priority=priority,
+            priority=_priority_to_int(priority),
             labels=list(set(labels)),
-            custom_fields={
-                "component_name": data.component_name,
-                "rebuild_priority": data.rebuild_priority,
-                "complexity_score": data.complexity_score,
-            },
         )
 
         issue = await self._client.create_issue(request)
@@ -361,19 +361,10 @@ class BeadsLifecycleManager:
 
         # Create the ticket
         request = CreateIssueRequest(
-            project=self._config.project,
-            issue_type="Task",
-            summary=summary,
+            title=summary,
             description=description,
-            priority=priority,
+            priority=_priority_to_int(priority),
             labels=list(set(labels)),
-            custom_fields={
-                "component_id": data.component_id,
-                "component_name": data.component_name,
-                "total_iterations": data.total_iterations,
-                "final_agreement_rate": data.final_agreement_rate,
-                "discrepancy_type": "call_graph_divergence",
-            },
         )
 
         issue = await self._client.create_issue(request)
@@ -635,11 +626,9 @@ h2. Components
 """.strip()
 
         request = CreateIssueRequest(
-            project=self._config.rebuild_project,
-            issue_type="Epic",
-            summary=epic_name,
+            title=epic_name,
             description=description,
-            priority="High",
+            priority=0,  # High priority
             labels=self._config.default_labels + ["rebuild-epic"],
         )
 
