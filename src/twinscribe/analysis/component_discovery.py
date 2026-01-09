@@ -320,13 +320,28 @@ class ComponentDiscovery:
         """
         self._codebase_path = Path(codebase_path)
         self._include_patterns = include_patterns or ["**/*.py"]
+        # Note: These patterns are used with fnmatch which doesn't support **
+        # So we also check for substring matches for common exclude dirs
         self._exclude_patterns = exclude_patterns or [
-            "**/test_*",
-            "**/tests/**",
-            "**/__pycache__/**",
-            "**/venv/**",
-            "**/.venv/**",
-            "**/.*/**",
+            "*test_*",
+            "*/tests/*",
+            "*/__pycache__/*",
+            "*/venv/*",
+            "*/.venv/*",
+            "*/.*/*",
+        ]
+        # Directories to always exclude (substring match)
+        self._exclude_dirs = [
+            ".venv",
+            "venv",
+            "__pycache__",
+            ".git",
+            ".tox",
+            "node_modules",
+            "site-packages",
+            ".eggs",
+            "build",
+            "dist",
         ]
         self._include_private = include_private
 
@@ -409,10 +424,19 @@ class ComponentDiscovery:
         all_files: set[Path] = set()
 
         # Collect files matching include patterns
+        # Use a generator to avoid loading all files into memory
         for pattern in self._include_patterns:
-            all_files.update(self._codebase_path.glob(pattern))
+            for file_path in self._codebase_path.glob(pattern):
+                # Early skip for excluded directories (before adding to set)
+                try:
+                    rel_parts = file_path.relative_to(self._codebase_path).parts
+                    if any(exc_dir in rel_parts for exc_dir in self._exclude_dirs):
+                        continue
+                except ValueError:
+                    pass
+                all_files.add(file_path)
 
-        # Filter out excluded patterns
+        # Filter out excluded patterns and directories
         filtered = []
         for file_path in all_files:
             try:
@@ -420,7 +444,14 @@ class ComponentDiscovery:
             except ValueError:
                 rel_path = str(file_path)
 
+            # Check fnmatch patterns
             excluded = any(fnmatch.fnmatch(rel_path, exc) for exc in self._exclude_patterns)
+
+            # Also check if path contains any excluded directory
+            if not excluded:
+                path_parts = rel_path.split("/")
+                excluded = any(exc_dir in path_parts for exc_dir in self._exclude_dirs)
+
             if not excluded and file_path.is_file():
                 filtered.append(file_path)
 
