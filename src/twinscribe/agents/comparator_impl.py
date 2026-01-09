@@ -803,7 +803,8 @@ class ConcreteComparatorAgent(ComparatorAgent):
                 for strategy in strategies:
                     try:
                         result = strategy(text)
-                        if result is not None:
+                        # Must be a dict to be valid
+                        if isinstance(result, dict):
                             return result
                     except (json.JSONDecodeError, AttributeError, TypeError):
                         continue
