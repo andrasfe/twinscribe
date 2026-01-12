@@ -57,7 +57,7 @@ jobs:
             -m "verification or not verification"
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         if: always()
         with:
           name: verification-coverage-report
